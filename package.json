@@ -1,0 +1,40 @@
+{
+  "name": "voidtrackr",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first audio (WAV/MP3) to multi-track MIDI converter with a built-in piano-roll editor.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "model": "node scripts/fetch-model.mjs",
+    "cli": "tsx src/cli/convert.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:signal": "node scripts/make-test-wav.mjs test/sample.wav",
+    "check:reproducibility": "tsx scripts/check-reproducibility.mts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "model:okarina": "node scripts/fetch-okarina.mjs",
+    "evaluate": "tsx scripts/evaluate-folder.mts"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tonejs/midi": "^2.0.28",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "audio-decode": "^3.12.0",
+    "onnxruntime-node": "^1.31.1",
+    "onnxruntime-web": "^1.31.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

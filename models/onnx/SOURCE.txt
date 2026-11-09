@@ -1,0 +1,12 @@
+Okarina (Harmonica-class ONNX reimplementation)
+
+Model id: okarina-mazun-2026
+Source: https://huggingface.co/mazun/rekord/resolve/main
+Homepage: https://huggingface.co/mazun/rekord
+Paper: https://arxiv.org/abs/2609.04640
+License: CC BY-NC-SA 4.0 (non-commercial)
+Note: Unofficial ONNX reimplementation of Harmonica. The Harmonica weights themselves were never released. Non-commercial use only: CC BY-NC-SA 4.0.
+
+cqt156.onnx              sha256 ff88505975e9d6c3e3c413aff5748abe711dfe3e9aee1bdf57bb637e28cf1c6f
+okarina_s.onnx           sha256 44ec3f8331b0f899b17437c37c4d4a0159fb46cc18f2c58bbdbcfb4bd195c00f
+okarina_m.onnx           sha256 c014fa25e9027e049c96734d36b589a66940d3b7f194f5020c5ae950e6a9319c

@@ -1,0 +1,9 @@
+Basic Pitch (ICASSP 2022) model weights
+
+Model id: basic-pitch-icassp2022
+Source: https://raw.githubusercontent.com/spotify/basic-pitch-ts/main/model
+Homepage: https://github.com/spotify/basic-pitch-ts
+License: Apache-2.0
+
+model.json               sha256 1ed1aaee3409ec1dc098c8b01f430c0911f6fe9412e7af8086750f9e8f302f68
+group1-shard1of1.bin     sha256 b142a95737a52e1e412d5f92e73d8bb80dfe8d04941acc0702f11f4524fb377c

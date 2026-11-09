@@ -1,0 +1,662 @@
+/* ==========================================================================
+   voidtrackr — style.css
+
+   The Void look: deep purple-black surfaces, one violet accent, mono for
+   anything that identifies the tool and sans for everything else.
+
+   The tokens are the same ones TheVoidCo's own site uses, so the two look
+   like the same family. The light theme is a straight override of the same
+   variables — nothing else in this file knows which theme is active.
+
+     1. Tokens
+     2. Reset & base
+     3. The void
+     4. Header
+     5. Buttons & fields
+     6. Drop zone
+     7. Workspace
+     8. Editor
+   ========================================================================== */
+
+/* 1. Tokens ---------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --void-900: #07070b;
+  --void-800: #0c0c13;
+  --void-700: #12121b;
+  --void-600: #171722;
+
+  /* Lines */
+  --line: #232330;
+  --line-soft: #1b1b26;
+
+  /* Ink */
+  --ink: #ecebf5;
+  --ink-2: #a7a4bd;
+  --ink-3: #74718c;
+
+  /* Accent */
+  --accent: #8b7bf7;
+  --accent-ink: #b7adff;
+  --accent-soft: rgba(139, 123, 247, 0.14);
+
+  /* Status */
+  --live: #4fd48b;
+  --lan: #e3b341;
+  --dev: #8683a0;
+
+  /* Type */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  /* Metrics */
+  --radius: 14px;
+  --radius-sm: 9px;
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 18px 40px -28px rgba(0, 0, 0, 0.9);
+}
+
+/* The light theme is the same palette with the surfaces turned over. */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --void-900: #f5f5f9;
+    --void-800: #ffffff;
+    --void-700: #ffffff;
+    --void-600: #fbfbfe;
+
+    --line: #e3e2ec;
+    --line-soft: #eeedf5;
+
+    --ink: #15141c;
+    --ink-2: #53506a;
+    --ink-3: #83809a;
+
+    --accent: #6a55d8;
+    --accent-ink: #5b47c7;
+    --accent-soft: rgba(106, 85, 216, 0.1);
+
+    --live: #0f8a4d;
+    --lan: #92660a;
+    --dev: #6a6783;
+
+    --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.9) inset,
+      0 16px 34px -28px rgba(28, 25, 54, 0.45);
+  }
+}
+
+/* 2. Reset & base ---------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  background-color: var(--void-900);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0.1em 0.4em;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 26px 28px 30px;
+  gap: 20px;
+}
+
+/* 3. The void -------------------------------------------------------------- */
+
+/* The drifting gradient and the starfield. It sits behind everything and
+   never takes a pointer event. */
+.void-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  background:
+    radial-gradient(1100px 700px at 76% -12%, rgba(139, 123, 247, 0.2), transparent 62%),
+    radial-gradient(820px 620px at 4% 14%, rgba(94, 201, 194, 0.11), transparent 60%),
+    radial-gradient(900px 900px at 50% 108%, rgba(139, 123, 247, 0.08), transparent 62%);
+  animation: drift 26s ease-in-out infinite alternate;
+}
+
+.void-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 12% 22%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 28% 68%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 43% 12%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1px 1px at 61% 41%, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1px 1px at 74% 77%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 88% 31%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(1px 1px at 8% 88%, rgba(255, 255, 255, 0.38), transparent),
+    radial-gradient(1px 1px at 35% 91%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(1px 1px at 57% 58%, rgba(255, 255, 255, 0.26), transparent),
+    radial-gradient(1px 1px at 82% 12%, rgba(255, 255, 255, 0.34), transparent),
+    radial-gradient(1px 1px at 21% 47%, rgba(255, 255, 255, 0.24), transparent),
+    radial-gradient(1px 1px at 68% 93%, rgba(255, 255, 255, 0.28), transparent);
+  opacity: 0.85;
+}
+
+@keyframes drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(-1.5%, 1.5%, 0) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .void-bg {
+    animation: none;
+  }
+}
+
+/* 4. Header ---------------------------------------------------------------- */
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+
+.kicker-slash {
+  color: var(--accent);
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 1.7rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.wordmark-mark {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  flex: none;
+}
+
+.wordmark-text {
+  color: var(--ink);
+}
+
+.subtitle {
+  color: var(--ink-2);
+  font-size: 0.92rem;
+  max-width: 52ch;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.original-audio {
+  height: 34px;
+  max-width: 320px;
+  border-radius: var(--radius-sm);
+}
+
+/* 5. Buttons & fields ------------------------------------------------------ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--void-700);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0713;
+  font-weight: 600;
+}
+
+.button.primary:hover:not(:disabled) {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+  color: #0b0713;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+.field > span {
+  width: 56px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.field input,
+.field select {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 0.88rem;
+  background: var(--void-800);
+  color: var(--ink);
+  min-width: 0;
+}
+
+.field input[type='number'] {
+  width: 74px;
+  font-variant-numeric: tabular-nums;
+}
+
+.field em {
+  color: var(--ink-3);
+  font-style: normal;
+  font-size: 0.76rem;
+  font-family: var(--font-mono);
+}
+
+/* The model picker sits in the header rather than the sidebar, because it
+   has to be chosen before a file is dropped. */
+.model-picker {
+  margin-bottom: 0;
+  gap: 6px;
+}
+
+.model-picker > span {
+  width: auto;
+}
+
+.model-picker select {
+  min-width: 150px;
+}
+
+.model-picker em {
+  max-width: 24ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 6. Drop zone ------------------------------------------------------------- */
+
+.dropzone {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--void-800);
+  box-shadow: var(--shadow-card);
+  padding: 64px 24px;
+  text-align: center;
+  color: var(--ink-2);
+}
+
+.dropzone h2 {
+  margin: 0 0 6px;
+  font-size: 1.2rem;
+}
+
+.dropzone p {
+  margin: 0 0 18px;
+}
+
+.dropzone.busy {
+  border-style: solid;
+}
+
+.error {
+  color: #ff7b8a;
+  font-size: 0.9rem;
+  margin-top: 16px;
+}
+
+@media (prefers-color-scheme: light) {
+  .error {
+    color: #b02a37;
+  }
+}
+
+.progress {
+  height: 6px;
+  background: var(--void-600);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 22px auto 10px;
+  max-width: 520px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+
+.progress-label {
+  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  color: var(--ink-3);
+  margin: 0;
+}
+
+/* 7. Workspace ------------------------------------------------------------- */
+
+.workspace {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.panel {
+  background: var(--void-800);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 15px 17px;
+}
+
+.panel h3 {
+  margin: 0 0 11px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+}
+
+.stats {
+  display: flex;
+  gap: 18px;
+  margin: 13px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.stats dt {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.stats dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.track-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.track-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.track-name {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.track-count {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+}
+
+.chip {
+  border: 1px solid var(--line);
+  background: var(--void-700);
+  border-radius: 999px;
+  width: 26px;
+  height: 22px;
+  font-size: 0.7rem;
+  color: var(--ink-2);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.chip.off {
+  background: var(--void-600);
+  color: var(--ink-3);
+  border-color: var(--line-soft);
+}
+
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  color: var(--ink-3);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 8. Editor ---------------------------------------------------------------- */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--void-800);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 11px 13px;
+}
+
+.seek {
+  flex: 0 1 260px;
+  min-width: 120px;
+  accent-color: var(--accent);
+}
+
+.time {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.hint {
+  color: var(--ink-3);
+  font-size: 0.78rem;
+}
+
+.piano-roll {
+  flex: 1;
+  min-height: 420px;
+  background: var(--void-800);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.piano-roll-canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+/* Scrollbars, in the brand's colours. The default light scrollbar was a
+   bright strip down the middle of a very dark page. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 123, 247, 0.35) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 123, 247, 0.3);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 123, 247, 0.5);
+}
