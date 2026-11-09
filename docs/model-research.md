@@ -478,16 +478,25 @@ good velocities.
 ## 6. What we measured on your own music
 
 The `Music Import` folder holds 19 tracks — the same recordings as mp3, ogg
-and wav — totalling 58 minutes. Both models were run over every one of them.
+and wav — totalling 58 minutes. All five models were run over every one of
+them.
 
 ```bash
+npm run model
 npm run model:okarina
-npm run evaluate -- "Music Import" --out eval
+npm run model:tsumugi
+npm run model:yourmt3
+npm run model:piano
+npm run evaluate -- "Music Import" --out eval \
+  --models basic-pitch,tsumugi,piano,okarina,yourmt3
 ```
 
 That writes an HTML report to `eval/index.html` with, for every song: a piano
 roll per model, a **Play** button that sounds the notes, a link to the MIDI
-file, and a link to the original recording so the two can be compared.
+file, and a link to the original recording so they can be compared. The
+results are written after every song rather than only at the end, so a run
+that is interrupted still has something to show, and `--report-only` rebuilds
+the page from what is on disk.
 
 ### The result
 
@@ -681,7 +690,7 @@ models only agree 65 % with each other on it. The only way to choose is to
 run the candidates over your own material and listen.
 
 That is now done: the report exists, the MIDI files are written, and the
-numbers are in section 6. What is left is your judgement of how the two
+numbers are in section 6. What is left is your judgement of how the models
 sound.
 
 If you want a ground truth rather than a comparison, the strongest option
@@ -690,11 +699,13 @@ would let the models be scored outright instead of only against each other.
 
 **What is left, concretely:**
 
-1. **A decision on the third model.** Tsumugi is the one to build; YourMT3+ is
-   the alternative. Both are already downloaded and verified to load.
+1. **A decision on the model to ship.** All three permissive candidates are
+   implemented and measured against Okarina on the same 19 tracks; section 6
+   has the numbers and the report has the recordings to listen to.
 2. **One email** to the author of the Harmonica reproduction, asking for a
    licence file. This is the only route to the strongest model being
-   commercially usable, and it costs one message.
+   commercially usable, and it costs one message. The draft is in
+   `docs/harmonica-licence-request.md`.
 3. **A legal opinion on MAESTRO**, if anything is going to be sold. Every
    permissive model in the table except Aria-AMT and hFT-Transformer was
    trained on it in some proportion.

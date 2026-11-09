@@ -67,15 +67,18 @@ interface Options {
   okarinaSize: OkarinaSize;
   /** Rebuild the page from the saved results, without transcribing again. */
   reportOnly: boolean;
+  /** Print the aggregate from the saved results, without transcribing again. */
+  summaryOnly: boolean;
 }
 
 function parseArgs(argv: string[]): Options {
   const options: Options = {
     folder: '',
     out: 'eval',
-    models: ['basic-pitch', 'tsumugi', 'piano', 'okarina'],
+    models: ['basic-pitch', 'tsumugi', 'piano', 'okarina', 'yourmt3'],
     okarinaSize: 'm',
     reportOnly: false,
+    summaryOnly: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -83,10 +86,15 @@ function parseArgs(argv: string[]): Options {
     else if (arg === '--models') options.models = argv[++i].split(',');
     else if (arg === '--okarina-size') options.okarinaSize = argv[++i] as OkarinaSize;
     else if (arg === '--report-only') options.reportOnly = true;
+    else if (arg === '--summary') options.summaryOnly = true;
     else if (!arg.startsWith('-')) options.folder = arg;
   }
-  if (!options.folder && !options.reportOnly) {
-    console.error('Usage: tsx scripts/evaluate-folder.mts <folder> [--out dir] [--models a,b]');
+  if (!options.folder && !options.reportOnly && !options.summaryOnly) {
+    console.error(
+      'Usage: tsx scripts/evaluate-folder.mts <folder> [--out dir] [--models a,b]\n' +
+        '       tsx scripts/evaluate-folder.mts --out dir --summary\n' +
+        '       tsx scripts/evaluate-folder.mts --out dir --report-only',
+    );
     process.exit(1);
   }
   return options;
@@ -128,12 +136,16 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
 
   // Rebuilding the page from the saved results, without transcribing again.
-  if (options.reportOnly) {
+  if (options.reportOnly || options.summaryOnly) {
     const saved = JSON.parse(await readFile(join(options.out, 'report.json'), 'utf8')) as {
       results: SongResult[];
     };
     // The agreement is recomputed, so the page always reflects the notes
     // that are actually in the results.
+    if (options.summaryOnly) {
+      printSummary(saved.results);
+      return;
+    }
     await writeFile(join(options.out, 'index.html'), buildReport(saved.results));
     console.log(`report: ${resolve(options.out, 'index.html')}`);
     return;
@@ -216,7 +228,22 @@ async function main(): Promise<void> {
   await writeFile(join(options.out, 'index.html'), buildReport(results, agreements));
 
   console.log('\n--- summary ---');
-  for (const id of Object.keys(results[0]?.models ?? {})) {
+  printSummary(results);
+  console.log(`\nreport: ${resolve(options.out, 'index.html')}`);
+}
+
+/**
+ * Print the aggregate over every song.
+ *
+ * The same numbers are printed whether the run has just finished or the
+ * results were read back off disk, so a run that was interrupted can still
+ * be reported on.
+ */
+function printSummary(results: SongResult[]): void {
+  const ids = Object.keys(results[0]?.models ?? {});
+  const agreements = computeAgreements(results);
+
+  for (const id of ids) {
     const all = results.map((r) => r.models[id]);
     const avg = (pick: (m: ModelResult) => number) =>
       all.reduce((sum, m) => sum + pick(m), 0) / all.length;
@@ -230,7 +257,6 @@ async function main(): Promise<void> {
   for (const [key, value] of Object.entries(agreements)) {
     console.log(`agreement ${key.padEnd(28)} ${(value * 100).toFixed(1)}%`);
   }
-  console.log(`\nreport: ${resolve(options.out, 'index.html')}`);
 }
 
 /** Find one file per song, preferring the lossless one. */
