@@ -52,7 +52,10 @@ Pitch, which is permissively licensed and works straight after `npm run model`.
 To switch it, change `DEFAULT_MODEL` in `src/core/registry.ts`.
 
 There is a survey of the alternatives, and of what was measured, in
-[`docs/model-research.md`](docs/model-research.md).
+[`docs/model-research.md`](docs/model-research.md). It includes a table of
+which models are licensed for commercial use — the two here are the two
+implemented; Tsumugi (MIT) and YourMT3+ (Apache-2.0) are the permissive
+candidates that are not built yet.
 
 ## The guarantee
 
@@ -231,6 +234,10 @@ redistributed with it. They are fetched separately and carry their own terms:
 
 - **Basic Pitch** — © Spotify AB, [Apache-2.0](https://github.com/spotify/basic-pitch-ts/blob/main/LICENSE)
 - **Okarina** — © the Harmonica authors, [CC BY-NC-SA 4.0](https://huggingface.co/mazun/rekord). **Non-commercial use only.**
+
+If you need a model you can ship commercially, the survey's
+[licence table](docs/model-research.md#39-the-commercial-question--what-can-actually-be-shipped)
+lists the permissive ones and says what each would take to add.
 
 Other dependencies: [TensorFlow.js](https://github.com/tensorflow/tfjs-js)
 (Apache-2.0), [@tonejs/midi](https://github.com/Tonejs/Midi) (MIT),

@@ -43,6 +43,23 @@ use or not**, because the best available model is licensed
 **CC BY-NC-SA 4.0 (non-commercial)**. Your answer was non-commercial, so
 Okarina is in.
 
+**On the commercial question, the honest answer has two halves.**
+
+*Nothing publicly released beats Harmonica.* Every Harmonica derivative is
+either non-commercial (Okarina, MuScriptor, SheetSage2) or unlicensed
+altogether — the strongest reproduction,
+[`z-huang/harmonica`](https://github.com/z-huang/harmonica), bundles trained
+weights for all five model sizes in its PyPI wheel and has **no `LICENSE`
+file at all**, so it is all-rights-reserved by default. There is no
+"Okarina but bigger and commercially usable". That model does not exist yet.
+
+But there **are** permissive models that are genuinely strong, and two of them
+were downloaded and run locally while writing this up:
+**Tsumugi** (weights MIT, instrument-agnostic, built for exactly this kind of
+synthesised material) and **YourMT3+** (weights Apache-2.0, instrument-agnostic).
+Section 3.9 has the licence table, section 3.10 has their interfaces as
+measured, and section 8 has the recommendation.
+
 ---
 
 ## 2. The timing bug we found and fixed
@@ -196,6 +213,17 @@ The catch, from Harmonica's own demo page: on out-of-domain material TransKun
 produced "the sparsest output here" — it dropped a lot of notes. On clean
 piano it is excellent; on a dense AI-generated mix it may under-report.
 
+> **Its licence is weaker than it looks.** MIT covers the *code*. The author
+> has never written a licence for the *weights* — the checkpoint
+> `transkun/pretrained/2.0.pt` simply ships inside the MIT-licensed
+> repository, and the PyPI metadata says `license: null`. The re-exports
+> (`ravetools/piano-visualizer`, `TuesdayCrowd/transkun-onnx`) both claim MIT
+> for the weights, but that is their claim, not the author's grant. On top of
+> that the weights were trained on MAESTRO, which is **CC BY-NC-SA 4.0**, and
+> whether a dataset's terms extend to the weights trained on it is not
+> settled. Treat TransKun as a **grey area**, not a clean yes — and see
+> section 3.9.
+
 ### 3.4 ByteDance `piano_transcription` — the best timing
 
 [`bytedance/piano_transcription`](https://github.com/bytedance/piano_transcription).
@@ -211,10 +239,14 @@ Its important property: it does not quantise onsets to a frame grid, it
 structural difference from Basic Pitch and the thing that makes onsets land
 where they really are.
 
-Weights are **CC BY 4.0** according to the musicnote model card — the most
-permissive licence of anything that works this well. It is trained for piano,
-so on a full mix it will pick out the piano-like content; combined with stem
-separation that is a reasonable route.
+Weights are **CC BY 4.0** according to the
+[Zenodo record](https://zenodo.org/records/4034264) — the most permissive
+licence of anything that works this well. That record's own page did not load
+for us (four attempts, network error), so the wording is corroborated by two
+re-export cards citing the same DOI rather than read off the page; it is worth
+one manual confirmation before shipping. It is trained for piano, so on a full
+mix it will pick out the piano-like content; combined with stem separation that
+is a reasonable route.
 
 ### 3.5 Tsumugi — the closest match for synthesised music
 
@@ -223,10 +255,16 @@ Takes TransKun's Neural Semi-CRF and extends it to all instruments. It is
 explicitly designed for **anime and synth music**, which is the closest
 published match to AI-generated songs.
 
+**The weights are MIT as well**, not just the code: the Hugging Face card for
+the checkpoints, [`anime-song/instrument_agnostic_amt`](https://huggingface.co/anime-song/instrument_agnostic_amt),
+states `license: mit` outright. That makes this the only instrument-agnostic
+model in this survey whose *weights* are unambiguously permissive — which
+matters, because the code licence is the one that is usually all you get.
+
 It ships separate checkpoints per part (`best_model_other_v1_5.pth` and
 friends) plus separate **velocity**, **beat**, **chord** and **key** models,
 and an instrument-refinement model. An ONNX export exists in the musicnote
-repository.
+repository, and it runs — see section 3.10.
 
 Caveat from its own documentation: it works best on clean, sustained material
 where each stem is monophonic, and its instrument classification is limited.
@@ -265,6 +303,100 @@ Its documentation also states the thing that matters most for this project:
 **"metric rhythm strongly depends on source beat tracking"**, and its V2
 generates bar by bar on the SheetSage2-Refined beat grid.
 
+### 3.9 The commercial question — what can actually be shipped
+
+Re-verified on 2026-11-09 against primary sources: the model card metadata,
+the repository `LICENSE` files, the PyPI metadata, and the Zenodo records.
+
+**Nothing publicly released beats Harmonica, and every Harmonica derivative is
+non-commercial.** The answer to "is there something better that I can sell" is
+therefore not a better model — it is a *different* model that is permissive,
+or one email.
+
+| Model | Weights licence | Commercial? | Shape |
+| --- | --- | --- | --- |
+| **Tsumugi** | **MIT** — the HF card `anime-song/instrument_agnostic_amt` says `license: mit` | **Yes** | instrument-agnostic |
+| **YourMT3+** | **Apache-2.0** — confirmed by the authors in [issue #12](https://github.com/mimbres/YourMT3/issues/12) and [#22](https://github.com/mimbres/YourMT3/issues/22) | **Yes**, with the MAESTRO caveat | instrument-agnostic |
+| **ByteDance `piano_transcription`** | **CC BY 4.0** — [Zenodo 4034264](https://zenodo.org/records/4034264) | **Yes**, with attribution | piano only |
+| **Aria-AMT** (EleutherAI) | **Apache-2.0** | **Yes** | piano only |
+| **hFT-Transformer** (Sony) | **MIT** | **Yes** | piano only |
+| **Basic Pitch** | Apache-2.0 | Yes | instrument-agnostic, weak |
+| Okarina | CC BY-NC-SA 4.0 | No | instrument-agnostic |
+| MuScriptor | CC BY-NC 4.0, gated | No | instrument-agnostic |
+| SheetSage2 / -Refined / Tsumugi-MRL | CC BY-NC 4.0 | No | lead sheet / encoder |
+| **Harmonica (repro)** | **no licence file at all** | **No — default copyright** | instrument-agnostic |
+
+**The single most valuable thing to do is ask.** Two models are one message
+away from being usable:
+
+- **[`z-huang/harmonica`](https://github.com/z-huang/harmonica)** — an
+  independent PyTorch reimplementation of Harmonica with trained weights for
+  **all five sizes bundled in the PyPI wheel** (~69 MB), and a velocity head
+  the paper lacks. `uvx harmonica-amt song.wav` writes MIDI. The author's own
+  numbers land just under the paper's (x-large mean OnP/OnPOff/Frm
+  .879/.695/.846 against the paper's .895/.721/.852). **It has no `LICENSE`
+  file, no licence classifier and `license: null` in the PyPI metadata**, so
+  it is currently all-rights-reserved. A one-line MIT or Apache-2.0 addition
+  would make it the most valuable release in this space.
+- **TransKun's author** — MIT covers the code; the weights were never
+  licensed in words, and MAESTRO's CC BY-NC-SA terms were never addressed.
+  Issue #37 asks about commercial use and was never answered.
+
+**The caveat that applies to nearly all of them.** MAESTRO is **CC BY-NC-SA
+4.0** and it is in the training mix of Basic Pitch, TransKun, Tsumugi,
+ByteDance's model and YourMT3+. Whether a dataset's terms extend to the
+weights trained on it is not settled law. The `musicnote-ondevice-models`
+author is the most honest about it, and flags three models in their own
+manifest as "not cleared to ship" for exactly this reason. The models that
+avoid it entirely — Harmonica, MuScriptor, SheetSage2 — are trained on
+synthetic data, and all three are the non-commercial ones.
+
+### 3.10 Two permissive models that are ready to run today
+
+Both of these were downloaded and run locally while checking the above.
+
+**Tsumugi**, as an ONNX export, in
+[`baroned/musicnote-ondevice-models`](https://huggingface.co/baroned/musicnote-ondevice-models)
+— `tsumugi_other_v1_5.*`, 73.6 MB, with the URL, size and SHA-256 of every
+file in the manifest, which is exactly the lock-file pattern this project
+uses. The graph takes the **raw stereo waveform** — `[batch, 2, 176400]`,
+8 seconds at 22 050 Hz — and computes its own features:
+
+```
+waveform       [1, 2, 176400] float32   →  cand_score  [116410]
+valid_audio_frames [1] int64                cand_idx    [116410, 4]
+                                           diag_score  [1, 345, 264]
+                                           active_pitches [8]
+                                           pitch_features [1, 345, 8, 256]
+                                           instrument_pitch_features [1, 345, 8, 256]
+                                           frame_valid_mask [1, 345]
+```
+
+The CQT front end is **inside** the graph, which makes it far easier to
+integrate than it looks. What is left outside is the Neural Semi-CRF decode
+and the boundary/velocity/instrument heads, whose weights ship as
+`tsumugi_other_v1_5.heads.bin` (1.9 MB). The same formulation appears in
+TransKun, and a JavaScript decoder for it already exists in
+`ravetools/piano-visualizer`. Measured locally: 5.8 s for an 8-second window,
+single-threaded.
+
+**YourMT3+**, as an ONNX export, in
+[`ONLY4DarkKnight/YourMT3-plus-onnx`](https://huggingface.co/ONLY4DarkKnight/YourMT3-plus-onnx)
+— `encoder.onnx` (97 MB) and `decoder_step.onnx` (93 MB), weights Apache-2.0,
+not gated. The interface is:
+
+```
+encoder:  spec [B, 110, 1024]  →  ck_0..ck_7, cv_0..cv_7
+decoder:  ids [N], pos [1], pk_0..7, pv_0..7, ck_0..7  →  one token step
+```
+
+The spectrogram is *not* in the graph — the caller computes it in double
+precision (2048-point FFT, periodic Hann, centre-reflect padding, per-segment
+min-max normalisation) — and the decode loop is a greedy autoregressive
+outside the graph, up to 256 tokens over 13 channels in parallel. The
+exporter reports 0.18–0.21× real time on CPU with 12 threads and a 2.7 GB
+peak, and F1 0.817 on Slakh2100-redux against Basic Pitch's 0.465.
+
 ---
 
 ## 4. What the benchmarks actually say
@@ -290,6 +422,21 @@ Two things follow.
 
 This is why we should not chase a number. The practical test is whether the
 result *sounds* like the song.
+
+**A calibration from the literature, for the dense case.** MulTTiPop, a
+benchmark built from real pop music, reports that the best models reach only
+about **29 % onset F1 on real arrangements**. If a candidate scores near that,
+it is in the normal range for the material — not broken. MIREX 2026 posted its
+audio-to-score results on 15 October 2026, so the leaderboard has moved since
+this survey was first written.
+
+**What has appeared since the first version of this survey** (September 2026
+to November 2026): SheetSage2 (arXiv 2610.05336, CC BY-NC); a YourMT3+ ONNX
+export (3 November); a new proprietary BandLab voice model (5 November, no
+weights released); TUTTI (ISMIR 2026, 88.9 M parameters, synthetic-only
+training, weights not published); and the MIREX 2026 results. None of them
+changed the licence picture — the permissive set is still Tsumugi, YourMT3+,
+ByteDance, Aria-AMT and hFT-Transformer.
 
 ---
 
@@ -438,11 +585,15 @@ flag read from.
 
 | option | state |
 | --- | --- |
-| **Okarina** | **Done.** Implemented in `src/core/okarina.ts`, running in the browser through `onnxruntime-web` and on the command line through `onnxruntime-node`. The two produce byte-identical MIDI. |
-| **TransKun V2** | Not started. MIT, ONNX available, the JavaScript decoder already exists in `ravetools/piano-visualizer`. The risk is under-reporting on dense mixes. |
-| **ByteDance** | Not started. Best onset and offset accuracy by a distance, and CC BY 4.0. Makes most sense combined with stem separation, since it is a piano model. |
-| **Tsumugi** | Not started. Python inference today; the ONNX export would need the decoder ported. Closest match to synth material, MIT code. |
-| **A piano-cover model** | Not started. If the goal is a playable arrangement rather than an accurate copy, `tsumugi-piano-cover` is that task. |
+| **Okarina** | **Done.** Implemented in `src/core/okarina.ts`, running in the browser through `onnxruntime-web` and on the command line through `onnxruntime-node`. The two produce byte-identical MIDI. Weights are CC BY-NC-SA 4.0, so it stays opt-in for non-commercial use. |
+| **Basic Pitch** | **Done, and the default.** Apache-2.0 weights, `src/core/basic-pitch.ts`. Permissive, but measurably the weakest of the three we can run. |
+| **Tsumugi** | **Not started, but the ONNX export is downloaded and running.** Weights MIT, instrument-agnostic, built for synthesised material. Needs the Neural Semi-CRF decoder and the boundary/velocity/instrument heads ported into `src/core/`, then it slots into the same seam as the other two. The graph itself needs no front end — the CQT is inside it. |
+| **YourMT3+** | **Not started.** Weights Apache-2.0, instrument-agnostic, and the ONNX export is downloaded and loads. The work is heavier: a double-precision 2048-point spectrogram in front of the encoder, and a greedy autoregressive decode loop over 13 channels outside the graph, plus event→note post-processing. Peak memory is around 2.7 GB, which is the real constraint — the browser tab would need it. |
+| **TransKun V2** | Not started, and **not recommended for commercial use**: MIT covers the code, the weights were never licensed, and it was trained on MAESTRO. The JavaScript decoder already exists in `ravetools/piano-visualizer`, so it is the cheapest to try — but only if you are not shipping it. |
+| **ByteDance** | Not started. Best onset and offset accuracy by a distance, weights CC BY 4.0. Piano-only, so it makes most sense combined with stem separation. |
+| **Aria-AMT** / **hFT-Transformer** | Not started. Both permissive and small (hFT-Transformer is 5.48 M parameters, a 22 MB ONNX export, MIT), but piano-only. |
+| **Harmonica reproduction** | Blocked on one line of text. `z-huang/harmonica` has the weights for all five sizes bundled in its PyPI wheel and the best measured numbers of anything available — but it has no `LICENSE` file. See section 3.9. |
+| **A piano-cover model** | Not started. If the goal is a playable arrangement rather than an accurate copy, `tsumugi-piano-cover` is that task. Weights CC BY-NC 4.0. |
 
 Two practical notes:
 
@@ -460,18 +611,59 @@ Two practical notes:
 
 ## 8. Recommendation
 
-1. **Use Okarina.** It is measurably better on both the reference track and
-   your own music, and it is implemented. Pick it in the app's header or with
-   `--model okarina`.
-2. **Listen to the report.** `eval/index.html` has every song with both
+**Keep Basic Pitch as the default.** It is Apache-2.0, it ships, it works the
+moment `npm run model` finishes, and it is the only one of the three currently
+in the app that you can ship without thinking about it. The default should be
+the one with no legal question attached to it.
+
+**For the best model you can actually ship, the order is Tsumugi, then
+YourMT3+.** Tsumugi first, because its weights are unambiguously MIT, it is
+instrument-agnostic, it was designed for synthesised material like yours, and
+the ONNX export has already been downloaded and run on this machine — the
+front end is inside the graph, so what remains is the semi-CRF decoder and
+the heads. YourMT3+ second, because its weights are Apache-2.0 and it is
+instrument-agnostic, but the spectrogram and the decode loop are both outside
+the graph and it wants about 2.7 GB of memory, which is a real constraint in a
+browser tab. Neither is implemented yet; both are third-model work with a
+clear shape.
+
+**Do not ship Okarina commercially.** CC BY-NC-SA 4.0 means non-commercial use
+only, and it also carries a share-alike obligation on anything derived from it.
+It stays in the app as an opt-in model for personal and non-commercial work,
+where it is measurably the best of the three — 85.3 % F1 against the published
+Harmonica output, where Basic Pitch scores 30.4 %.
+
+**One email is worth more than any of the above.** The
+[Harmonica reproduction](https://github.com/z-huang/harmonica) has trained
+weights for all five model sizes, bundled in its PyPI wheel, and numbers that
+land just under the published paper. It has **no `LICENSE` file**, so it is
+all-rights-reserved and cannot be used. A one-line MIT or Apache-2.0 file on
+that repository would make the strongest model in this space commercially
+usable. That is a single short message to one person, and it has a larger
+payoff than any amount of further engineering.
+
+**The caveat that applies to all of the permissive models.** MAESTRO is CC
+BY-NC-SA 4.0, and it is in the training mix of Basic Pitch, TransKun, Tsumugi,
+ByteDance's model and YourMT3+. Whether a dataset's terms extend to weights
+trained on it is not settled law, and no amount of reading the model cards
+settles it. A model whose training data is entirely synthetic — Harmonica,
+MuScriptor, SheetSage2 — avoids the question, and all three are the
+non-commercial ones. This is worth a lawyer's opinion before anything is
+sold, not before anything is built.
+
+**Then, in order:**
+
+1. **Listen to the report.** `eval/index.html` has every song with both
    models side by side, playable, with the original recording alongside.
    That is the final check; no number replaces it.
-3. **If a third model is wanted**, TransKun V2 is the next one to try: MIT,
-   ONNX available, and the decoder already exists in JavaScript.
-4. **Beat-grid quantisation** is the best remaining idea for the *current*
+2. **Implement Tsumugi as the third model**, then measure it against Okarina
+   on the same 19 tracks. The comparison is already scripted — `npm run
+   evaluate` writes the report — so it is a matter of pointing it at a third
+   model.
+3. **Beat-grid quantisation** is the best remaining idea for the *current*
    model, but it needs a beat tracker that follows the phase. It is not worth
    doing until the model question is settled.
-5. **A piano-cover model** rather than a transcription, if the goal is a
+4. **A piano-cover model** rather than a transcription, if the goal is a
    playable arrangement rather than an accurate copy.
 
 ---
@@ -490,21 +682,38 @@ If you want a ground truth rather than a comparison, the strongest option
 would be the stems the songs were generated from, if they still exist. That
 would let the models be scored outright instead of only against each other.
 
+**What is left, concretely:**
+
+1. **A decision on the third model.** Tsumugi is the one to build; YourMT3+ is
+   the alternative. Both are already downloaded and verified to load.
+2. **One email** to the author of the Harmonica reproduction, asking for a
+   licence file. This is the only route to the strongest model being
+   commercially usable, and it costs one message.
+3. **A legal opinion on MAESTRO**, if anything is going to be sold. Every
+   permissive model in the table except Aria-AMT and hFT-Transformer was
+   trained on it in some proportion.
+
 ---
 
 ## Sources
 
 * [Harmonica — arXiv 2609.04640](https://arxiv.org/abs/2609.04640)
+* [Harmonica reproduction — github.com/z-huang/harmonica](https://github.com/z-huang/harmonica) and [harmonica-amt on PyPI](https://pypi.org/project/harmonica-amt/)
 * [Okarina — huggingface.co/mazun/rekord](https://huggingface.co/mazun/rekord)
 * [TransKun — github.com/Yujia-Yan/TransKun](https://github.com/Yujia-Yan/TransKun)
 * [MIREX 2024 polyphonic transcription results](https://music-ir.org/mirex/wiki/2024:Polyphonic_Transcription_Results)
 * [ByteDance piano transcription — github.com/bytedance/piano_transcription](https://github.com/bytedance/piano_transcription)
+* [ByteDance weights — Zenodo 4034264](https://zenodo.org/records/4034264)
 * [High-resolution piano transcription — arXiv 2409.19614](https://arxiv.org/abs/2409.19614)
 * [Tsumugi — github.com/anime-song/tsumugi](https://github.com/anime-song/tsumugi)
+* [Tsumugi checkpoints — huggingface.co/anime-song/instrument_agnostic_amt](https://huggingface.co/anime-song/instrument_agnostic_amt)
 * [tsumugi-piano-cover — github.com/anime-song/tsumugi-piano-cover](https://github.com/anime-song/tsumugi-piano-cover)
+* [YourMT3+ — github.com/mimbres/YourMT3](https://github.com/mimbres/YourMT3) and [commercial-use issue #12](https://github.com/mimbres/YourMT3/issues/12)
+* [YourMT3+ ONNX — huggingface.co/ONLY4DarkKnight/YourMT3-plus-onnx](https://huggingface.co/ONLY4DarkKnight/YourMT3-plus-onnx)
 * [MuScriptor — github.com/muscriptor/muscriptor](https://github.com/muscriptor/muscriptor)
 * [baroned/musicnote-ondevice-models](https://huggingface.co/baroned/musicnote-ondevice-models)
 * [ravetools/piano-visualizer](https://huggingface.co/ravetools/piano-visualizer)
+* [SheetSage2 — huggingface.co/m-a-p/SheetSage2](https://huggingface.co/m-a-p/SheetSage2)
 * [Beat This! — github.com/CPJKU/beat_this](https://github.com/CPJKU/beat_this)
 * [Demucs — github.com/facebookresearch/demucs](https://github.com/facebookresearch/demucs)
 * [basic-pitch-ts — github.com/spotify/basic-pitch-ts](https://github.com/spotify/basic-pitch-ts/blob/main/src/toMidi.ts)
