@@ -330,7 +330,12 @@ export class PianoTranscriptionModel implements TranscriptionModel {
       });
 
       for (const note of detected) {
-        const startTime = (note.begin + note.onsetShift) / FRAMES_PER_SECOND;
+        // The onset shift can be negative, and a note on the very first frame
+        // would then start before the recording does.
+        const startTime = Math.max(
+          0,
+          (note.begin + note.onsetShift) / FRAMES_PER_SECOND,
+        );
         // A note cannot run past the end of the recording. The offset
         // regression can put the end a frame or two beyond it, because the
         // window it came from was padded with silence.
@@ -534,7 +539,10 @@ function binarise(
   shift: Float32Array,
 ): void {
   for (let n = neighbour; n < frames - neighbour; n++) {
-    if (x[n] <= threshold) continue;
+    // Upstream tests `x[n] > threshold`, so a value that is not a number
+    // falls out here. Testing it the other way round would let a NaN
+    // through as if it were a peak.
+    if (!(x[n] > threshold)) continue;
     if (!isMonotonicNeighbour(x, n, neighbour)) continue;
 
     binary[n] = 1;

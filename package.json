@@ -1,6 +1,6 @@
 {
   "name": "voidtrackr",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "Local-first audio (WAV/MP3) to multi-track MIDI converter with a built-in piano-roll editor.",

@@ -94,5 +94,9 @@ function toOrtTensor(
       return new ort.Tensor('int32', tensor.data as Int32Array, tensor.dims);
     case 'int64':
       return new ort.Tensor('int64', tensor.data as BigInt64Array, tensor.dims);
+    case 'bool':
+      // The runtime only ever hands booleans back, so this case is never
+      // reached from a feed.
+      return new ort.Tensor('bool', tensor.data as Uint8Array, tensor.dims);
   }
 }

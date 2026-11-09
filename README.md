@@ -84,7 +84,7 @@ than something to hope for:
   fingerprint are written into the exported MIDI as a text meta event:
 
   ```
-  voidtrackr 0.3.0 | model basic-pitch-icassp2022 | sha256:1ed1aaee…
+  voidtrackr 0.3.1 | model basic-pitch-icassp2022 | sha256:1ed1aaee…
   ```
 
 - **The output does not depend on the machine.** The sample rate is read out of

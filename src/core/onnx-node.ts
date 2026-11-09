@@ -75,5 +75,7 @@ function toOrtTensor(tensor: OnnxTensor): ort.Tensor {
       return new ort.Tensor('int32', tensor.data as Int32Array, tensor.dims);
     case 'int64':
       return new ort.Tensor('int64', tensor.data as BigInt64Array, tensor.dims);
+    case 'bool':
+      return new ort.Tensor('bool', tensor.data as Uint8Array, tensor.dims);
   }
 }

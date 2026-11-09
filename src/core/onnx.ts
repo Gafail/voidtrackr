@@ -11,14 +11,14 @@
  */
 
 /** The element types the models use. */
-export type OnnxDataType = 'float32' | 'int32' | 'int64';
+export type OnnxDataType = 'float32' | 'int32' | 'int64' | 'bool';
 
 /** A tensor handed to, or returned from, an ONNX graph. */
 export interface OnnxTensor {
   /** The element type of the values. */
   type: OnnxDataType;
-  /** The values: a Float32Array, an Int32Array or a BigInt64Array. */
-  data: Float32Array | Int32Array | BigInt64Array;
+  /** The values: a Float32Array, an Int32Array, a BigInt64Array or a Uint8Array. */
+  data: Float32Array | Int32Array | BigInt64Array | Uint8Array;
   dims: readonly number[];
 }
 
@@ -40,6 +40,16 @@ export function asInt32(tensor: OnnxTensor): Int32Array {
 /** Read a tensor's values as 64-bit integers. */
 export function asInt64(tensor: OnnxTensor): BigInt64Array {
   return tensor.data as BigInt64Array;
+}
+
+/**
+ * Read a tensor's values as bytes.
+ *
+ * A boolean tensor comes back as bytes, one per value, where zero is false
+ * and anything else is true.
+ */
+export function asUint8(tensor: OnnxTensor): Uint8Array {
+  return tensor.data as Uint8Array;
 }
 
 /** An inference session. */

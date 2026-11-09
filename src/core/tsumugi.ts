@@ -34,7 +34,7 @@
  */
 
 import { ModelOptions, ModelPart, ModelTranscription, TranscriptionModel } from './model';
-import { asFloat32, asInt32, OnnxRunner, OnnxSession, OnnxTensor } from './onnx';
+import { asFloat32, asInt32, asUint8, OnnxRunner, OnnxSession, OnnxTensor } from './onnx';
 import { RawNote, TrackKind } from './types';
 
 /** The sample rate the model wants its input at. */
@@ -280,7 +280,18 @@ export class TsumugiModel implements TranscriptionModel {
     lastClosedFrame: Map<number, number>,
   ): Map<number, ModelNote[]> {
     const meta = this.heads.meta;
-    const frames = 345;
+
+    // The graph says how many frames of the window carry audio. Upstream runs
+    // its Viterbi over exactly those frames and no further: the frames past
+    // them are the zero padding at the end of the window, and the model still
+    // gives them scores, so a decoder that walks over them can pick an
+    // interval that runs into the padding.
+    const mask = asUint8(out.frame_valid_mask);
+    let frames = 0;
+    for (let i = 0; i < mask.length; i++) {
+      if (mask[i]) frames += 1;
+    }
+    if (frames <= 0) frames = validFrames;
 
     const candScore = asFloat32(out.cand_score);
     const candIdx = asInt32(out.cand_idx);
@@ -396,8 +407,11 @@ export class TsumugiModel implements TranscriptionModel {
       onsetOffset = boundary.onsetOffset;
       offsetOffset = boundary.offsetOffset;
     } else {
+      // Without the boundary head, upstream says a note has an offset when
+      // it ends before the last frame that carries audio.
+      const validModelFrames = Math.ceil(validAudio / hop);
       hasOnset = interval.begin > 0;
-      hasOffset = interval.end < 345 - 1;
+      hasOffset = interval.end < validModelFrames - 1;
       onsetOffset = 0;
       offsetOffset = 1;
     }
@@ -628,20 +642,15 @@ function isSilent(
   const end = Math.min(samples.length, windowStart + windowSamples);
   if (windowStart >= end) return true;
 
-  let sum = 0;
-  let count = 0;
-  for (let i = windowStart; i < end; i++) {
-    sum += samples[i];
-    count++;
-  }
-  const mean = count > 0 ? sum / count : 0;
-
+  // The gate is an RMS over the whole window, zero padding included, and
+  // without subtracting the mean: `sqrt(mean(x^2))`. A window that runs off
+  // the end of the recording is padded with zeros, so its level drops the
+  // same way upstream's padding drops it.
   let energy = 0;
   for (let i = windowStart; i < end; i++) {
-    const d = samples[i] - mean;
-    energy += d * d;
+    energy += samples[i] * samples[i];
   }
-  const rms = Math.sqrt(energy / Math.max(1, count));
+  const rms = Math.sqrt(energy / windowSamples);
   return rms < gate;
 }
 
@@ -752,7 +761,11 @@ function finaliseNotes(notes: ModelNote[], heads: Heads, totalSamples: number): 
 
       if (current && (mergeByGap || mergeByOnset)) {
         current.endSample = Math.max(current.endSample, note.endSample);
-        current.hasOffset = current.hasOffset || note.hasOffset;
+        // A gap merge takes the continuation's offset as it is; an onset
+        // merge keeps whichever of the two has one.
+        current.hasOffset = mergeByGap
+          ? note.hasOffset
+          : current.hasOffset || note.hasOffset;
         if (note.instrumentScore > current.instrumentScore) {
           current.instrument = note.instrument;
           current.instrumentScore = note.instrumentScore;

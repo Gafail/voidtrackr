@@ -22,8 +22,16 @@
  * 0.3.0 changed nothing about the notes. The tool renamed itself to
  * voidtrackr, and the name is part of the provenance stamp, so the bytes of
  * every exported file changed even though the transcription did not.
+ *
+ * 0.3.1 brought the Tsumugi and Piano ports back in line with the code they
+ * were ported from, in the places where the two could disagree about the
+ * edges of a recording: the silence gate measured the wrong thing, the
+ * Viterbi walked into the zero padding at the end of a window, a merge rule
+ * kept notes that upstream drops, and a note could start before the
+ * recording did. The notes of most recordings do not change; the ones that
+ * do are at the quiet ends and the very end of a file.
  */
-export const PIPELINE_VERSION = '0.3.0';
+export const PIPELINE_VERSION = '0.3.1';
 
 /** Where the weights came from, for the record. */
 export const MODEL_SOURCE =

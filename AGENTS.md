@@ -241,6 +241,17 @@ npm run check:reproducibility
   comes out as fourteen sharps, and it writes the mode as a string, so minor
   keys are written as major. `src/core/midi.ts` rewrites those two bytes after
   the file is written. Do not remove that.
+- **Two ports deliberately depart from upstream, and they are marked in the
+  code.** ByteDance's `note_detection_with_onset_offset_regress` writes
+  `if bgn:`, which is false for frame 0, so every note starting on the very
+  first frame is thrown away. `src/core/piano.ts` tests for `null` instead
+  and keeps those notes. The comment at the call site says so. Do not
+  "fix" it back to upstream's behaviour without knowing what you are
+  changing. The other departure is the Tsumugi port, which follows upstream
+  exactly — the silence gate is an RMS over the whole window rather than a
+  standard deviation, the Viterbi runs over the frames the graph marks as
+  valid rather than all 345 of them, and a gap merge takes the
+  continuation's offset rather than keeping either one.
 - **`@tensorflow/tfjs-node` 4.21 and 4.22 ship a broken build.** Its published
   code requires Node's own `util` module where it meant to require
   TensorFlow.js's utilities, and then calls a function that does not exist
@@ -305,8 +316,9 @@ npm run check:reproducibility
 - **SSH:** the container's host keys were regenerated on provisioning — the
   clone had inherited the template's identity. The old ones are in
   `/root/.trash-removed/` on the box.
-- **Current pipeline version:** 0.3.0 (`src/core/version.ts`) — the rename to
-  voidtrackr; the notes are unchanged from 0.2.0.
+- **Current pipeline version:** 0.3.1 (`src/core/version.ts`) — the Tsumugi
+  and Piano ports brought back in line with upstream at the edges of a
+  recording. The notes of most recordings are unchanged from 0.2.0.
 - **Models in the catalogue:** Basic Pitch (Apache-2.0, the default),
   Tsumugi (MIT), YourMT3+ (Apache-2.0), Piano Transcription (CC BY 4.0),
   Okarina (CC BY-NC-SA 4.0, non-commercial).

@@ -189,6 +189,21 @@ async function main(): Promise<void> {
     console.log(
       `${song.name.padEnd(30)} ${grid.bpm.toFixed(1).padStart(6)} BPM  ${summary}`,
     );
+
+    // The results are written after every song, not just at the end.
+    //
+    // A folder of recordings takes hours to go through, and the run can be
+    // interrupted. If the results only appeared at the very end, an
+    // interrupted run would have nothing to show. The page is rebuilt from
+    // this file with `--report-only`, so nothing is lost.
+    await writeFile(
+      join(options.out, 'report.json'),
+      JSON.stringify(
+        { generated: new Date().toISOString(), results, agreements: computeAgreements(results) },
+        null,
+        2,
+      ),
+    );
   }
 
   // Cross-model agreement, in both directions.
