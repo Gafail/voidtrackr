@@ -21,7 +21,7 @@
 /* 1. Tokens ---------------------------------------------------------------- */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light dark;
 
   /* Surfaces */
   --void-900: #07070b;
@@ -48,6 +48,9 @@
   --lan: #e3b341;
   --dev: #8683a0;
 
+  /* The one colour that has to change with the theme to stay readable. */
+  --danger: #ff7b8a;
+
   /* Type */
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
@@ -60,36 +63,59 @@
 
   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset,
     0 18px 40px -28px rgba(0, 0, 0, 0.9);
+
+  /* How hard the background reads. */
+  --void-bg-opacity: 1;
+  --star-opacity: 0.85;
 }
 
-/* The light theme is the same palette with the surfaces turned over. */
-@media (prefers-color-scheme: light) {
+/* The light theme is the same palette with the surfaces turned over.
+   `light-dark()` reads the used value of `color-scheme`, so one set of
+   tokens serves both — the reader's system decides, and an explicit choice
+   on the document overrides it. Browsers without `light-dark()` keep the
+   dark palette above, which is the brand's own. */
+@supports (color: light-dark(#000, #fff)) {
   :root {
-    color-scheme: light;
+    --void-900: light-dark(#f5f5f9, #07070b);
+    --void-800: light-dark(#ffffff, #0c0c13);
+    --void-700: light-dark(#ffffff, #12121b);
+    --void-600: light-dark(#fbfbfe, #171722);
 
-    --void-900: #f5f5f9;
-    --void-800: #ffffff;
-    --void-700: #ffffff;
-    --void-600: #fbfbfe;
+    --line: light-dark(#e3e2ec, #232330);
+    --line-soft: light-dark(#eeedf5, #1b1b26);
 
-    --line: #e3e2ec;
-    --line-soft: #eeedf5;
+    --ink: light-dark(#15141c, #ecebf5);
+    --ink-2: light-dark(#53506a, #a7a4bd);
+    --ink-3: light-dark(#83809a, #74718c);
 
-    --ink: #15141c;
-    --ink-2: #53506a;
-    --ink-3: #83809a;
+    --accent: light-dark(#6a55d8, #8b7bf7);
+    --accent-ink: light-dark(#5b47c7, #b7adff);
+    --accent-soft: light-dark(rgba(106, 85, 216, 0.1), rgba(139, 123, 247, 0.14));
 
-    --accent: #6a55d8;
-    --accent-ink: #5b47c7;
-    --accent-soft: rgba(106, 85, 216, 0.1);
+    --live: light-dark(#0f8a4d, #4fd48b);
+    --lan: light-dark(#92660a, #e3b341);
+    --dev: light-dark(#6a6783, #8683a0);
 
-    --live: #0f8a4d;
-    --lan: #92660a;
-    --dev: #6a6783;
+    --danger: light-dark(#b02a37, #ff7b8a);
 
-    --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.9) inset,
-      0 16px 34px -28px rgba(28, 25, 54, 0.45);
+    --shadow-card: light-dark(
+      0 1px 0 rgba(255, 255, 255, 0.9) inset,
+      0 16px 34px -28px rgba(28, 25, 54, 0.45),
+      0 1px 0 rgba(255, 255, 255, 0.03) inset,
+      0 18px 40px -28px rgba(0, 0, 0, 0.9)
+    );
+
+    --void-bg-opacity: light-dark(0.6, 1);
   }
+}
+
+/* An explicit choice overrides the reader's system preference. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 /* 2. Reset & base ---------------------------------------------------------- */
@@ -162,6 +188,7 @@ code {
   z-index: -1;
   pointer-events: none;
   overflow: hidden;
+  opacity: var(--void-bg-opacity);
   background:
     radial-gradient(1100px 700px at 76% -12%, rgba(139, 123, 247, 0.2), transparent 62%),
     radial-gradient(820px 620px at 4% 14%, rgba(94, 201, 194, 0.11), transparent 60%),
@@ -186,7 +213,7 @@ code {
     radial-gradient(1px 1px at 82% 12%, rgba(255, 255, 255, 0.34), transparent),
     radial-gradient(1px 1px at 21% 47%, rgba(255, 255, 255, 0.24), transparent),
     radial-gradient(1px 1px at 68% 93%, rgba(255, 255, 255, 0.28), transparent);
-  opacity: 0.85;
+  opacity: var(--star-opacity);
 }
 
 @keyframes drift {
@@ -272,6 +299,50 @@ code {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* The theme toggle. One button, two states: the icon shows the theme the
+   reader is in, and pressing it moves to the other one. */
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--void-700);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.theme-toggle:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.theme-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.theme-icon-dark {
+  fill: currentColor;
+  stroke: none;
+}
+
+:root[data-theme='light'] .theme-icon-dark {
+  display: none;
+}
+
+:root:not([data-theme='light']) .theme-icon-light {
+  display: none;
 }
 
 .original-audio {
@@ -409,15 +480,9 @@ code {
 }
 
 .error {
-  color: #ff7b8a;
+  color: var(--danger);
   font-size: 0.9rem;
   margin-top: 16px;
-}
-
-@media (prefers-color-scheme: light) {
-  .error {
-    color: #b02a37;
-  }
 }
 
 .progress {

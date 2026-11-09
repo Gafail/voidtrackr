@@ -35,6 +35,8 @@ export interface PianoRollProps {
   selected: Set<string>;
   tempo: number;
   playhead: number;
+  /** The current theme. The canvas paints itself, so it has to be told. */
+  theme: 'light' | 'dark';
   onSelect: (ids: Set<string>) => void;
   onChange: (tracks: EditorTrack[]) => void;
   onEditStart: () => void;
@@ -71,6 +73,7 @@ export function PianoRoll({
   selected,
   tempo,
   playhead,
+  theme,
   onSelect,
   onChange,
   onEditStart,
@@ -87,21 +90,6 @@ export function PianoRoll({
     rowHeight: 14,
   });
   const [size, setSize] = useState({ width: 900, height: 420 });
-
-  /**
-   * Bumped when the colour scheme changes, so the canvas repaints itself.
-   *
-   * The canvas is painted by hand, so it does not follow the stylesheet on its
-   * own — it has to be told that the tokens have changed underneath it.
-   */
-  const [themeTick, setThemeTick] = useState(0);
-
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-color-scheme: light)');
-    const onChange = () => setThemeTick((value) => value + 1);
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
-  }, []);
 
   // --- Layout helpers --------------------------------------------------
 
@@ -294,7 +282,7 @@ export function PianoRoll({
     context.moveTo(GUTTER + 0.5, 0);
     context.lineTo(GUTTER + 0.5, size.height);
     context.stroke();
-  }, [tracks, selected, view, size, tempo, playhead, timeToX, pitchToY, xToTime, yToPitch, themeTick]);
+  }, [tracks, selected, view, size, tempo, playhead, timeToX, pitchToY, xToTime, yToPitch, theme]);
 
   // --- Sizing ----------------------------------------------------------
 

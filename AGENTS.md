@@ -4,8 +4,8 @@
 > machine. A browser app with a piano-roll editor, and a command-line
 > converter for batch work.
 
-**Status:** local-only — no deployment yet
-**Domain:** none (not deployed)
+**Status:** live on the LAN — `http://192.168.100.109/`
+**Domain:** none (LAN-only, no tunnel, no public DNS)
 **Brand identity:** "A recording in, a MIDI file out. Nothing is uploaded." — deep violet-black surfaces, one violet accent, mono for anything that identifies the tool.
 
 ## Project purpose
@@ -19,12 +19,14 @@ have to leave the machine it is on.
 
 ## Status
 
-**Local-only. Not deployed.** The app runs from `npm run dev` on
-`127.0.0.1:5173`; the CLI runs from `npm run cli`. There is no server, no
-container, no domain and no credentials, so there is no `CREDENTIALS.md` for
-this project.
+**Live on the LAN, not deployed publicly.** The app is served as static files
+from a Proxmox LXC at `192.168.100.109`, and the CLI runs from `npm run cli`.
+There is no domain and no tunnel, so the site is reachable only from the LAN.
 
-The tool is complete and verified: 27 tests pass, the type check is clean, the
+The source lives in its own repository, `https://github.com/Gafail/voidtrackr`,
+which is public. The folder is `~/Desktop/voidtrackr/`.
+
+The tool is complete and verified: 32 tests pass, the type check is clean, the
 production build succeeds, and the browser and the command line produce
 byte-identical MIDI for both models.
 
@@ -50,10 +52,12 @@ default is one line: `DEFAULT_MODEL` in `src/core/registry.ts`.
 - **Model seam:** `TranscriptionModel` in `src/core/model.ts` — a model returns
   *notes grouped into parts*, not a matrix. Everything downstream (drums,
   tempo, key, MIDI writing) is shared between models.
-- **Deploy pipeline:** none. `npm run build` produces a static `dist/`. It has
-  never been published anywhere.
+- **Deploy pipeline:** `npm run build` → a static `dist/`, rsynced to the
+  container's webroot by `deploy.sh`. nginx serves the files; there is no
+  runtime on the box.
 - **Key files:** `src/core/pipeline.ts` (the shared finaliser), `src/core/model.ts`
-  (the seam), `src/core/version.ts` (provenance), `src/app/App.tsx` (the shell).
+  (the seam), `src/core/version.ts` (provenance), `src/app/App.tsx` (the shell),
+  `deploy.sh` (the LAN deploy), `ops/nginx/` (the vhost and headers).
 
 ## File map
 
@@ -80,6 +84,7 @@ src/core/     the pipeline — no DOM, no Node specifics, runs in both
   beat.ts         the model-independent beat grid tracker (not wired in)
   notes.ts        note naming and the shared note helpers
   types.ts        the shared data types
+  sha256.ts       the pure-JavaScript SHA-256 fallback
   midi.ts         the MIDI writer, including the key-signature fix
   version.ts      PIPELINE_VERSION, TOOL_NAME and the provenance stamp
   model.lock.json     the pinned Basic Pitch weights
@@ -94,6 +99,10 @@ src/app/      the React app
 
 src/cli/      convert.ts — the command line converter
 
+ops/nginx/    the deployment configuration
+  voidtrackr.conf          the site vhost
+  voidtrackr-headers.conf  the security headers, with this site's CSP
+
 scripts/
   fetch-model.mjs        fetch and verify the Basic Pitch weights
   fetch-okarina.mjs      fetch and verify the Okarina weights
@@ -104,34 +113,43 @@ scripts/
   evaluate-folder.mts    transcribe a folder, write eval/report.json + eval/index.html
 
 docs/model-research.md   the survey of every model, and what was measured
-test/                    pipeline.test.ts, models.test.ts
+test/                    pipeline.test.ts, models.test.ts, sha256.test.ts
+public/                  404.html and robots.txt, copied into the build
 eval/                    generated folder report (gitignored)
 models/onnx/             the Okarina weights (gitignored)
-Music Import/            the user's own songs (gitignored)
 AGENTS.md                this file
+deploy.sh                build, upload and reload the LAN host
 ```
 
 ## How to deploy
 
-There is nothing deployed, so there is nothing to push. To get a local build:
+The site is static: nginx serves the built files and there is no runtime on the
+box.
 
 ```bash
 npm install --no-audit --no-fund
 npm run model              # fetch and verify the Basic Pitch weights
 npm run model:okarina      # fetch and verify the Okarina weights (~21 MB)
 npm run build              # typecheck + vite build → dist/
-npm run preview            # serve dist/ on 127.0.0.1:4173
+./deploy.sh 192.168.100.109   # build, rsync, install the vhost, reload nginx
 ```
 
-`dist/` is about 52 MB, because the ONNX runtime's WebAssembly (15 MB) and the
-Okarina weights (21 MB) are copied into it. Without them it is about 3 MB, and
-only Basic Pitch is available in the browser.
+`deploy.sh` finds the umbrella repo (for the shared deploy key) by looking at
+the siblings of this folder. It refuses to run against the placeholder address
+`192.0.2.0`, which is what the checked-in vhost carries instead of a real one.
+
+The host is registered in the umbrella's `ops/vm.sh`, so it can also be reached
+directly:
+
+```bash
+cd ~/Desktop/TheVoidCo && ./ops/vm.sh voidtrackr 'hostname; nginx -t'
+```
 
 Before calling any change done:
 
 ```bash
 npm run typecheck
-npm test                              # 27 tests
+npm test                              # 32 tests
 npm run check:reproducibility
 ```
 
@@ -156,6 +174,10 @@ npm run check:reproducibility
   exported file, so the stamp and the notes should move together.
 - **`npm run cli` crashes on import** → the broken `@tensorflow/tfjs-node`
   4.21/4.22 build; see "Known gotchas".
+- **The site loads but the model never appears** → check the browser console
+  first. `crypto.subtle` is undefined outside a secure context, and the
+  Content-Security-Policy may be blocking WebAssembly. Both have bitten; see
+  "Known gotchas".
 - **To compare two MIDI files** → `node scripts/compare-midi.mjs a.mid b.mid`.
   To score one against a reference → `node scripts/evaluate-midi.mjs ref.mid est.mid`.
 
@@ -175,6 +197,34 @@ npm run check:reproducibility
   searches for the window the time falls in and picks the closest frame inside
   it. A naive `time / MODEL_FRAME_SECONDS` is wrong by up to the window
   overlap.
+- **`crypto.subtle` only exists in a secure context.** HTTPS, or localhost.
+  Served over plain HTTP on a LAN it is not there, and the model check died
+  with "cannot read properties of undefined (reading 'digest')" — the app
+  loaded and then silently did nothing. `src/core/sha256.ts` is the fallback;
+  it gives the same digest, so the fingerprint does not move. There is a test
+  that takes the platform's digest away and checks the answer does not change.
+- **nginx has no MIME type for `.mjs`, and a browser will not run a module
+  script without one.** Ubuntu's `mime.types` has `application/javascript js;`
+  but nothing for `.mjs`, so the ONNX runtime's glue module was served as
+  `application/octet-stream`. The browser refused it with "Expected a
+  JavaScript-or-Wasm module script", ONNX reported "no available backend
+  found", and the app sat there doing nothing with no visible error. The
+  `/ort/` location in `ops/nginx/voidtrackr.conf` carries its own `types`
+  block. Check the `Content-Type` of anything the browser loads as a module.
+- **A strict CSP blocks WebAssembly.** The browser treats
+  `WebAssembly.compile` as script evaluation, so `script-src 'self'` stops the
+  Okarina model loading. The policy needs `'wasm-unsafe-eval'`. And a site
+  cannot send two Content-Security-Policy headers and expect the looser one
+  to win: the browser enforces every policy it receives. That is why
+  `ops/nginx/voidtrackr-headers.conf` exists instead of including the
+  umbrella's shared snippet.
+- **`'wasm-unsafe-streaming'` is a Firefox source expression only.** Chrome
+  logs "invalid source … It will be ignored" for it on every page load.
+- **The theme is one set of tokens, not two stylesheets.** `styles.css` uses
+  `light-dark()`, which reads the used value of `color-scheme`. The system
+  decides until the reader picks otherwise, and `data-theme` on the document
+  overrides it. The piano roll paints itself, so the theme is passed to it as
+  a prop and it repaints when it changes — the CSS cannot reach a canvas.
 - **`@tonejs/midi` writes the key signature wrong.** It writes the position of
   the key name in its table as if it were the signed key number, so C major
   comes out as fourteen sharps, and it writes the mode as a string, so minor
@@ -203,6 +253,10 @@ npm run check:reproducibility
   It reads the CSS tokens with `token()` in `src/app/PianoRoll.tsx` and
   redraws on a `prefers-color-scheme` change. A new colour has to be added
   there as well as in `styles.css`.
+- **The build ships the ONNX runtime's wasm twice.** Once at `/ort/` (served
+  from `node_modules`, and the path the app asks for) and once at `/assets/`
+  (emitted by Vite because the runtime imports it). The `/assets/` copy is
+  dead weight — about 15 MB — and can be excluded if that is ever worth doing.
 
 ## Brand identity
 
@@ -218,8 +272,10 @@ npm run check:reproducibility
 - **Palette:** the Void tokens, shared with TheVoidCo's own site —
   `--void-900 #07070b`, `--void-800 #0c0c13`, `--void-700 #12121b`,
   `--line #232330`, `--ink #ecebf5`, `--ink-2 #a7a4bd`, `--ink-3 #74718c`,
-  `--accent #8b7bf7`, `--accent-ink #b7adff`. Light theme overrides the same
-  variables; nothing else in the stylesheet knows which theme is active.
+  `--accent #8b7bf7`, `--accent-ink #b7adff`. The stylesheet holds one set of
+  tokens and lets `light-dark()` pick between the two palettes; a theme
+  toggle in the header overrides the reader's system preference, and nothing
+  is stored.
 - **Type:** `--font-sans` for prose, `--font-mono` for anything that
   identifies the tool — the wordmark, the kicker, panel headings, numbers.
 - **Background:** the `.void-bg` radial gradients and starfield, drifting
@@ -227,9 +283,17 @@ npm run check:reproducibility
 
 ## Live operations state
 
-Nothing is deployed. No server, no container, no domain, no tunnel, no
-credentials.
-
+- **Site:** `http://192.168.100.109/` — a Proxmox LXC named `voidtrackr`,
+  running nginx and nothing else. The webroot is `/var/www/voidtrackr` and the
+  vhost is `/etc/nginx/sites-available/voidtrackr.conf`.
+- **Deploy:** `./deploy.sh 192.168.100.109` from this folder. It builds,
+  rsyncs, installs the vhost and headers, disables the template's own base
+  site, validates with `nginx -t`, reloads, and smoke tests.
+- **Host registration:** `ops/vm.sh` in the umbrella repo, under `voidtrackr`,
+  with the shared deploy key. `./ops/vm.sh voidtrackr 'hostname'`.
+- **SSH:** the container's host keys were regenerated on provisioning — the
+  clone had inherited the template's identity. The old ones are in
+  `/root/.trash-removed/` on the box.
 - **Current pipeline version:** 0.3.0 (`src/core/version.ts`) — the rename to
   voidtrackr; the notes are unchanged from 0.2.0.
 - **Models in the catalogue:** Basic Pitch (Apache-2.0, the default),
@@ -238,7 +302,8 @@ credentials.
 - **Pinned weights:** `src/core/model.lock.json` (Basic Pitch) and
   `src/core/okarina.lock.json` (Okarina). Both are checked before the model
   runs, and a mismatch stops the conversion.
-- **Registry:** TheVoidCo's root `README.md` holds the pointer row for
-  `voidtrackr`; TheVoidCo holds **no copy of this source**. The folder is
-  `~/Desktop/voidtrackr/`.
-- **Git:** this folder is not a git repository. There is no CI and no remote.
+- **Repository:** `https://github.com/Gafail/voidtrackr` — public, branch
+  `main`. TheVoidCo holds **no copy of this source**; its root `README.md`
+  holds the pointer row and its site renders it.
+- **Git:** this folder is its own repository. There is no CI and no remote
+  other than origin.

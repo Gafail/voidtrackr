@@ -1,0 +1,5 @@
+# voidtrackr runs on a private network and is not meant to be indexed.
+# Nothing here is for search engines.
+
+User-agent: *
+Disallow: /

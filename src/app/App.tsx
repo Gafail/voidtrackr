@@ -86,6 +86,53 @@ async function loadOkarinaModel(): Promise<TranscriptionModel> {
 const HISTORY_LIMIT = 60;
 
 type Status = 'idle' | 'working' | 'done' | 'error';
+type Theme = 'light' | 'dark';
+
+/** What the reader's system is asking for. */
+function systemTheme(): Theme {
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+/**
+ * The theme, and the button that changes it.
+ *
+ * The reader's system decides until they choose otherwise. The choice is
+ * written onto the document so the stylesheet can follow it, and so the
+ * piano roll — which paints itself rather than being styled — reads the
+ * right palette.
+ *
+ * Nothing is stored: no localStorage, no cookies. A reload goes back to the
+ * system's preference, which is the house rule.
+ */
+function useTheme(): { theme: Theme; toggle: () => void } {
+  const [theme, setTheme] = useState<Theme>(systemTheme);
+  const chosen = useRef(false);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  // The system is followed until the reader picks for themselves.
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: light)');
+    const onChange = () => {
+      if (!chosen.current) setTheme(query.matches ? 'light' : 'dark');
+    };
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
+  const toggle = useCallback(() => {
+    chosen.current = true;
+    const next = theme === 'dark' ? 'light' : 'dark';
+    // The document is changed before the state, so a redraw never happens
+    // against the old palette.
+    document.documentElement.dataset.theme = next;
+    setTheme(next);
+  }, [theme]);
+
+  return { theme, toggle };
+}
 
 export function App() {
   const [status, setStatus] = useState<Status>('idle');
@@ -109,6 +156,8 @@ export function App() {
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [modelId, setModelId] = useState<ModelId>(DEFAULT_MODEL);
+
+  const { theme, toggle: toggleTheme } = useTheme();
 
   const modelCacheRef = useRef<Map<ModelId, TranscriptionModel>>(new Map());
   const playerRef = useRef<Player | null>(null);
@@ -402,6 +451,34 @@ export function App() {
           </p>
         </div>
         <div className="header-actions">
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={toggleTheme}
+            aria-label={
+              theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'
+            }
+            aria-pressed={theme === 'dark'}
+            title={theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}
+          >
+            <svg
+              className="theme-icon theme-icon-dark"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.8 6.8 0 0 0 10.8 10.8Z" />
+            </svg>
+            <svg
+              className="theme-icon theme-icon-light"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <circle cx="12" cy="12" r="4.2" />
+              <path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9 5.3 5.3" />
+            </svg>
+          </button>
           <label className="field model-picker">
             <span>Model</span>
             <select
@@ -602,6 +679,7 @@ export function App() {
               selected={selected}
               tempo={tempo}
               playhead={playhead}
+              theme={theme}
               onSelect={setSelected}
               onChange={setTracks}
               onEditStart={onEditStart}

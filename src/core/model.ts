@@ -18,6 +18,7 @@ import {
   SAMPLE_RATE,
 } from './constants';
 import { RawNote, TrackKind } from './types';
+import { sha256HexFallback } from './sha256';
 
 /** Number of pitch bins the models report. */
 export const PITCH_BINS = 88;
@@ -223,10 +224,20 @@ export async function sha256Hex(data: ArrayBuffer | Uint8Array | string): Promis
   // shared memory.
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
+
+  // `crypto.subtle` only exists in a secure context — HTTPS, or localhost.
+  // Over plain HTTP on a LAN the page is not one, and the platform's digest
+  // is simply not there. The check still has to run, so there is a fallback
+  // that gives the same digest.
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    const digest = await subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  return sha256HexFallback(new Uint8Array(buffer));
 }
 
 /**
