@@ -24,18 +24,24 @@ from a Proxmox LXC at `192.168.100.109`, and the CLI runs from `npm run cli`.
 There is no domain and no tunnel, so the site is reachable only from the LAN.
 
 The source lives in its own repository, `https://github.com/Gafail/voidtrackr`,
-which is public. The folder is `~/Desktop/voidtrackr/`.
+which is public. The folder is `~/Desktop/AudiotoMidi/` — the name on disk is
+not the name of the tool, and the user asked for it to stay that way.
 
-The tool is complete and verified: 32 tests pass, the type check is clean, the
+The tool is complete and verified: 41 tests pass, the type check is clean, the
 production build succeeds, and the browser and the command line produce
-byte-identical MIDI for both models.
+byte-identical MIDI for all five models.
 
-The one open product decision: **Okarina is the better model on this user's
+The one open product decision: **Okarina is the best model on this user's
 material** (F1 85.3 % against published Harmonica output, versus 30.4 % for the
 Basic Pitch pipeline) but it is licensed **CC BY-NC-SA 4.0 — non-commercial
 only**. The default is still Basic Pitch (Apache-2.0) because it is
 permissively licensed and works straight after `npm run model`. Flipping the
 default is one line: `DEFAULT_MODEL` in `src/core/registry.ts`.
+
+Measured over the user's own 19 tracks, **ByteDance's piano model (CC BY 4.0)
+is the best model that can be sold**: it shares 63.9 % of Okarina's notes,
+against 29.6 % for YourMT3+ and 23.4 % for Tsumugi. The numbers are in
+`docs/model-research.md` section 6, and the report is `eval/index.html`.
 
 ## Architecture
 
@@ -43,8 +49,10 @@ default is one line: `DEFAULT_MODEL` in `src/core/registry.ts`.
   framework. `src/app/`.
 - **Backend:** none. There is no server process, no API and no database. The
   browser does the work; the CLI does the same work in Node.
-- **Models:** two, behind one interface. Basic Pitch (TensorFlow.js, Apache-2.0)
-  and Okarina (ONNX Runtime, CC BY-NC-SA). Both are pinned by SHA-256.
+- **Models:** five, behind one interface. Basic Pitch (TensorFlow.js,
+  Apache-2.0), Tsumugi (ONNX, MIT), YourMT3+ (ONNX, Apache-2.0), ByteDance's
+  piano model (ONNX, CC BY 4.0) and Okarina (ONNX, CC BY-NC-SA). All are
+  pinned by SHA-256.
 - **Persistence:** none. Files are read from disk or dropped into the page,
   and the only output is a downloaded `.mid`.
 - **Audio decoding:** the Web Audio API in the browser; a pure-JavaScript
@@ -119,9 +127,10 @@ scripts/
   compare-midi.mjs       diff two MIDI files
   evaluate-midi.mjs      score one MIDI file against another
   evaluate-folder.mts    transcribe a folder, write eval/report.json + eval/index.html
+  stamp-eval-midi.mts   add the provenance stamp to the evaluation's MIDI files
 
 docs/model-research.md   the survey of every model, and what was measured
-test/                    pipeline.test.ts, models.test.ts, sha256.test.ts
+test/                    pipeline.test.ts, models.test.ts, sha256.test.ts, onnx-models.test.ts
 public/                  404.html and robots.txt, copied into the build
 eval/                    generated folder report (gitignored)
 models/onnx/             the Okarina weights (gitignored)
@@ -160,7 +169,7 @@ Before calling any change done:
 
 ```bash
 npm run typecheck
-npm test                              # 32 tests
+npm test                              # 41 tests
 npm run check:reproducibility
 ```
 

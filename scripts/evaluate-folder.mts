@@ -45,6 +45,7 @@ import { YourMt3Model, YOURMT3_DIR, YOURMT3_FILES } from '../src/core/yourmt3';
 import yourmt3Lock from '../src/core/yourmt3.lock.json';
 import { transcribe } from '../src/core/pipeline';
 import { buildMidiFile } from '../src/core/midi';
+import { provenanceFor } from '../src/core/version';
 import { BeatGrid, distanceToGrid, estimateBeatGrid } from '../src/core/beat';
 import { RawNote, Track } from '../src/core/types';
 import { pathToFileURL } from 'node:url';
@@ -186,7 +187,12 @@ async function main(): Promise<void> {
     for (const [id, model] of Object.entries(models)) {
       const result = await transcribe(samples, { model, detectDrums: true });
       const notes = result.tracks.flatMap((track) => track.notes);
-      const bytes = buildMidiFile(result.tracks, result.tempo, result.key);
+      // The same provenance the tool stamps on its own exports, so a MIDI
+      // file taken from the report can be traced back to the code and the
+      // weights that made it.
+      const bytes = buildMidiFile(result.tracks, result.tempo, result.key, {
+        provenance: provenanceFor(model),
+      });
       const midiName = `${song.slug}.${id}.mid`;
       await writeFile(join(options.out, 'midi', midiName), Buffer.from(bytes));
 

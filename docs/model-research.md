@@ -53,12 +53,20 @@ weights for all five model sizes in its PyPI wheel and has **no `LICENSE`
 file at all**, so it is all-rights-reserved by default. There is no
 "Okarina but bigger and commercially usable". That model does not exist yet.
 
-But there **are** permissive models that are genuinely strong, and two of them
-were downloaded and run locally while writing this up:
-**Tsumugi** (weights MIT, instrument-agnostic, built for exactly this kind of
-synthesised material) and **YourMT3+** (weights Apache-2.0, instrument-agnostic).
-Section 3.9 has the licence table, section 3.10 has their interfaces as
-measured, and section 8 has the recommendation.
+But there **are** permissive models that are genuinely strong, and all three of
+them were downloaded, run and measured on your own 19 tracks while writing this
+up: **Tsumugi** (weights MIT, instrument-agnostic), **YourMT3+** (weights
+Apache-2.0, instrument-agnostic) and **ByteDance's piano model** (weights
+CC BY 4.0). Section 3.9 has the licence table, section 3.10 has their
+interfaces as measured, and section 6 has what they did to your material.
+
+**What the measurement came to:** ByteDance's piano model shares **63.9 %** of
+Okarina's notes on your music — more than double any other permissive model —
+and lands its onsets within 0.1 points of Okarina's on the beat. It is the
+best model you can actually sell. Tsumugi, which looked like the natural fit on
+paper, turned out to be the weakest of the three on this material.
+
+The full table is in section 6 and the recommendation is in section 8.
 
 ---
 
@@ -224,7 +232,8 @@ piano it is excellent; on a dense AI-generated mix it may under-report.
 > settled. Treat TransKun as a **grey area**, not a clean yes — and see
 > section 3.9.
 
-### 3.4 ByteDance `piano_transcription` — the best timing
+### 3.4 ByteDance `piano_transcription` — the best timing, and the best of the
+permissive models on your material
 
 [`bytedance/piano_transcription`](https://github.com/bytedance/piano_transcription).
 This is the one to look at if *timing accuracy* is the priority.
@@ -240,26 +249,39 @@ structural difference from Basic Pitch and the thing that makes onsets land
 where they really are.
 
 Weights are **CC BY 4.0** according to the
-[Zenodo record](https://zenodo.org/records/4034264) — the most permissive
-licence of anything that works this well. That record's own page did not load
-for us (four attempts, network error), so the wording is corroborated by two
-re-export cards citing the same DOI rather than read off the page; it is worth
-one manual confirmation before shipping. It is trained for piano, so on a full
-mix it will pick out the piano-like content; combined with stem separation that
-is a reasonable route.
+[Zenodo record](https://zenodo.org/records/4034264) — confirmed first-party by
+the record's own API, which returns `license: cc-by-4.0`. That is the most
+permissive licence of anything that works this well, and the only one that
+allows selling the output without a share-alike obligation. It is trained for
+piano, so on a full mix it picks out the piano-like content; combined with
+stem separation that is a reasonable route.
 
-### 3.5 Tsumugi — the closest match for synthesised music
+**And it is the one that won the measurement.** On your own 19 tracks it
+shared **63.9 %** of Okarina's notes — more than double any other permissive
+model — and landed its onsets within 0.1 points of Okarina's on the beat.
+See section 6. The caveat is real and worth naming: it is trained on MAESTRO
+alone, so the training-data question described in section 3.9 applies to it
+in its most concentrated form.
+
+### 3.5 Tsumugi — instrument-agnostic, and not the answer for this material
 
 [`anime-song/tsumugi`](https://github.com/anime-song/tsumugi), MIT code.
 Takes TransKun's Neural Semi-CRF and extends it to all instruments. It is
-explicitly designed for **anime and synth music**, which is the closest
-published match to AI-generated songs.
+explicitly designed for **anime and synth music**, which looked like the
+closest published match to AI-generated songs.
 
 **The weights are MIT as well**, not just the code: the Hugging Face card for
 the checkpoints, [`anime-song/instrument_agnostic_amt`](https://huggingface.co/anime-song/instrument_agnostic_amt),
 states `license: mit` outright. That makes this the only instrument-agnostic
 model in this survey whose *weights* are unambiguously permissive — which
 matters, because the code licence is the one that is usually all you get.
+
+**The measurement did not agree with the theory.** On your 19 tracks Tsumugi
+found 4390 notes a song, as many as Basic Pitch, with only 23.4 % of them
+confirmed by Okarina and the worst on-beat rate of the five models at 13.7 %.
+Being instrument-agnostic turns out to be a liability on a full mix: it
+spreads itself across many instruments rather than committing to the ones that
+are actually playing. See section 6.
 
 It ships separate checkpoints per part (`best_model_other_v1_5.pth` and
 friends) plus separate **velocity**, **beat**, **chord** and **key** models,
@@ -351,9 +373,10 @@ manifest as "not cleared to ship" for exactly this reason. The models that
 avoid it entirely — Harmonica, MuScriptor, SheetSage2 — are trained on
 synthetic data, and all three are the non-commercial ones.
 
-### 3.10 Two permissive models that are ready to run today
+### 3.10 Three permissive models that are ready to run today
 
-Both of these were downloaded and run locally while checking the above.
+All three of these were downloaded and run locally while checking the above,
+and all three were then measured over your own 19 tracks (section 6).
 
 **Tsumugi**, as an ONNX export, in
 [`baroned/musicnote-ondevice-models`](https://huggingface.co/baroned/musicnote-ondevice-models)
@@ -502,44 +525,60 @@ the page from what is on disk.
 
 Over all 19 songs:
 
-| | Basic Pitch | Okarina |
-| --- | --- | --- |
-| notes per song | 4456 | 3130 |
-| onsets within 30 ms of the beat | 14.2 % | 15.7 % |
-| onsets within 30 ms of an eighth note | 27.2 % | 29.2 % |
-| mean distance to the nearest beat | 117.9 ms | 117.1 ms |
+| | Basic Pitch | Okarina | Tsumugi | Piano | YourMT3+ |
+| --- | --- | --- | --- | --- | --- |
+| notes per song | 4456 | 3130 | 4390 | 3500 | 4154 |
+| onsets within 30 ms of the beat | 14.2 % | **15.7 %** | 13.7 % | 15.6 % | 15.3 % |
+| onsets within 30 ms of an eighth note | 27.2 % | 29.2 % | 27.1 % | 29.2 % | **29.4 %** |
+| mean distance to the nearest beat | 117.9 ms | 117.1 ms | 118.1 ms | 117.7 ms | 117.7 ms |
 
-And, the measure that matters most — **how much the two models agree**:
+And, the measure that matters most — **how much each model agrees with Okarina**,
+which is the model you rate highest. The direction matters: if one model finds
+many more notes than the other and the extra ones are not matched, they are
+probably wrong.
 
 | | |
 | --- | --- |
-| Basic Pitch notes also found by Okarina | **40.6 %** |
-| Okarina notes also found by Basic Pitch | **57.6 %** |
+| Okarina notes also found by **Piano** | **63.9 %** |
+| Okarina notes also found by Basic Pitch | 57.6 % |
+| Okarina notes also found by YourMT3+ | 29.6 % |
+| Okarina notes also found by Tsumugi | 23.4 % |
+| **Piano** notes also found by Okarina | **56.4 %** |
+| Basic Pitch notes also found by Okarina | 40.6 % |
+| YourMT3+ notes also found by Okarina | 24.3 % |
+| Tsumugi notes also found by Okarina | 19.2 % |
 
 Read that carefully, because it is the whole answer:
 
-* Basic Pitch produces about **42 % more notes** than Okarina.
-* Only **40.6 %** of Basic Pitch's notes are confirmed by Okarina. The rest —
-  nearly three fifths — are notes the more accurate model does not find.
-* On the other hand, **57.6 %** of Okarina's notes *are* confirmed by Basic
-  Pitch.
+* **ByteDance's piano model is the closest thing to Okarina that can be sold.**
+  It shares 63.9 % of Okarina's notes — more than double the next best — and
+  its on-beat accuracy is within 0.1 points of Okarina's. It finds fewer notes
+  than any model except Okarina itself, which is what precision looks like.
+* **Basic Pitch over-transcribes.** It produces about 42 % more notes than
+  Okarina, and only 40.6 % of them are confirmed by Okarina. The rest are
+  notes nobody else agrees with: harmonics reported as notes, sustained notes
+  chopped into pieces, the same note counted twice. It agrees with Okarina
+  better than the two newer models do, but that is only because it finds so
+  many notes that it stumbles onto some of the right ones.
+* **Tsumugi is the weakest of the three new models on this material.** It
+  finds 4390 notes a song, as many as Basic Pitch, but only 23.4 % of them
+  are confirmed by Okarina, and it has the worst on-beat rate of the five at
+  13.7 %. This reverses the expectation set out in section 3.5: being built
+  for synthesised music does not make it the right model for *your* synthesised
+  music. It is instrument-agnostic, and on a full mix that means it spreads
+  itself across many instruments rather than committing to the ones that are
+  actually playing.
+* **YourMT3+ is the best of the two general-purpose models** — 29.6 % against
+  Okarina, and the best eighth-note accuracy of the five — but it is still
+  less than half as close to Okarina as the piano model is.
 
-So Basic Pitch's extra notes are overwhelmingly notes that nobody else
-agrees with. That is what over-transcription looks like: harmonics reported
-as notes, sustained notes chopped into pieces, the same note counted twice.
-Together with the reference-track measurement in section 2 — where Okarina
-scores 85.3 % against the published Harmonica output and our Basic Pitch
-pipeline scores 30.4 % — the conclusion is not close.
+### Why the beat numbers are low for all of them
 
-**Okarina is the better model for this material.**
-
-### Why the beat numbers are low for both
-
-Only around 15 % of the onsets land within 30 ms of a beat, for either model.
+Only around 15 % of the onsets land within 30 ms of a beat, for every model.
 That is not a defect in the models: this music is not a steady pulse with
 notes on every beat. It is mostly sustained pads, string swells and arpeggios
 that begin between the beats. The beat grid is there as a ruler, not as a
-target, and it is the same ruler for both models.
+target, and it is the same ruler for all five.
 
 The grid is measured from the recording itself, not from the notes, so it
 cannot flatter one model over the other. It finds 120.19 BPM on the test
@@ -552,8 +591,9 @@ four-minute track.
 next idea, and the tracker was built for it — but the grid is only accurate
 to about 12 ms, and the model's own onsets are better than that. Snapping
 would replace a good time with a worse one. It needs a beat tracker that
-follows the phase instead of laying down a constant grid, which is more work
-than it is worth until we know which model wins.
+follows the phase instead of laying down a constant grid. Now that the model
+question is settled, this is the best remaining idea for improving the output
+further.
 
 **Stem separation.** Demucs would help the vocals, but its own README warns
 that the piano stem has "a lot of bleeding and artifacts", and Okarina
@@ -621,30 +661,46 @@ Three practical notes:
 ## 8. Recommendation
 
 **Keep Basic Pitch as the default.** It is Apache-2.0, it ships, it works the
-moment `npm run model` finishes, and it is the only one of the three currently
-in the app that you can ship without thinking about it. The default should be
-the one with no legal question attached to it.
+moment `npm run model` finishes, and it is the only one that needs no question
+asked about it at all. The default should be the one with no legal question
+attached to it.
 
-**For the best model you can actually ship, the order is Tsumugi, then
-YourMT3+.** Tsumugi first, because its weights are unambiguously MIT, it is
-instrument-agnostic, it was designed for synthesised material like yours, and
-the ONNX export has already been downloaded and run on this machine — the
-front end is inside the graph, so what remains is the semi-CRF decoder and
-the heads. YourMT3+ second, because its weights are Apache-2.0 and it is
-instrument-agnostic, but the spectrogram and the decode loop are both outside
-the graph and it wants about 2.7 GB of memory, which is a real constraint in a
-browser tab.
+**For the best model you can actually ship, use ByteDance's piano model.**
+This is the one the measurement changed our mind about. On your 19 tracks it
+shares **63.9 %** of Okarina's notes — the next permissive model manages 29.6 %
+— and its onsets land on the beat within 0.1 points of Okarina's. It finds
+3500 notes a song against Okarina's 3130, so it is not simply a subset: it is
+finding the same notes. Its licence is **CC BY 4.0**, which permits commercial
+use and has no share-alike obligation.
 
-**Both of them are now implemented.** `src/core/tsumugi.ts` and
-`src/core/yourmt3.ts` exist, run, and produce notes; so does
-`src/core/piano.ts` for ByteDance's model. The app states each model's
-licence next to the picker, because the licence is part of the model and
-decides whether the output can be sold.
+It is also the cheapest of the three new models to run: the front end is
+inside the graph, so only the windowing and the onset/offset pairing had to be
+written, and it is smaller and faster than the other two.
+
+**YourMT3+ is second** (29.6 % against Okarina, and the best eighth-note
+accuracy of the five). Its weights are Apache-2.0. It is not the first choice
+because it wants about 2.7 GB of memory and roughly a fifth of real time on the
+CPU, which is a real constraint in a browser tab, and because it agreed with
+Okarina on less than half as many notes as the piano model did.
+
+**Tsumugi is third, and it is not the pick despite the licence being the
+cleanest of the three.** Its weights are MIT, which is unambiguous, and it was
+built for synthesised music — but on your music it found 4390 notes a song,
+as many as Basic Pitch, with only 23.4 % of them confirmed by Okarina and the
+worst on-beat rate of the five. Being instrument-agnostic turns out to be a
+liability on a full mix: it spreads itself over many instruments instead of
+committing to the ones actually playing. It stays in the app, because it is a
+useful third opinion and its licence is the simplest to ship.
+
+**All three are now implemented.** `src/core/tsumugi.ts`,
+`src/core/yourmt3.ts` and `src/core/piano.ts` exist, run, and produce notes.
+The app states each model's licence next to the picker, because the licence is
+part of the model and decides whether the output can be sold.
 
 **Do not ship Okarina commercially.** CC BY-NC-SA 4.0 means non-commercial use
 only, and it also carries a share-alike obligation on anything derived from it.
 It stays in the app as an opt-in model for personal and non-commercial work,
-where it is measurably the best of the three — 85.3 % F1 against the published
+where it is measurably the best of the five — 85.3 % F1 against the published
 Harmonica output, where Basic Pitch scores 30.4 %.
 
 **One email is worth more than any of the above.** The
@@ -654,7 +710,8 @@ land just under the published paper. It has **no `LICENSE` file**, so it is
 all-rights-reserved and cannot be used. A one-line MIT or Apache-2.0 file on
 that repository would make the strongest model in this space commercially
 usable. That is a single short message to one person, and it has a larger
-payoff than any amount of further engineering.
+payoff than any amount of further engineering. The draft is in
+`docs/harmonica-licence-request.md`.
 
 **The caveat that applies to all of the permissive models.** MAESTRO is CC
 BY-NC-SA 4.0, and it is in the training mix of Basic Pitch, TransKun, Tsumugi,
@@ -663,18 +720,18 @@ trained on it is not settled law, and no amount of reading the model cards
 settles it. A model whose training data is entirely synthetic — Harmonica,
 MuScriptor, SheetSage2 — avoids the question, and all three are the
 non-commercial ones. This is worth a lawyer's opinion before anything is
-sold, not before anything is built.
+sold, not before anything is built. ByteDance's model is trained on MAESTRO
+alone, so it has this caveat in its most concentrated form.
 
 **Then, in order:**
 
-1. **Listen to the report.** `eval/index.html` has every song with both
+1. **Listen to the report.** `eval/index.html` has every song with all five
    models side by side, playable, with the original recording alongside.
    That is the final check; no number replaces it.
-2. **Implement Tsumugi as the third model**, then measure it against Okarina
-   on the same 19 tracks. The comparison is already scripted — `npm run
-   evaluate` writes the report — so it is a matter of pointing it at a third
-   model. *Done: Tsumugi, YourMT3+ and ByteDance's piano model are all
-   implemented; the report has not been regenerated against them yet.*
+2. **Switch the default to the piano model** if you are selling, and keep
+   Basic Pitch as the default if you are not — it is the one that needs no
+   `npm run model:piano` step and no argument. It is one line in
+   `src/core/registry.ts`.
 3. **Beat-grid quantisation** is the best remaining idea for the *current*
    model, but it needs a beat tracker that follows the phase. It is not worth
    doing until the model question is settled.

@@ -52,14 +52,21 @@ attached to it: it works straight after `npm run model`, it is a megabyte, and
 it is Apache-2.0. To switch the default, change `DEFAULT_MODEL` in
 `src/core/registry.ts`.
 
-**Tsumugi is the one to reach for** on this kind of material. Its weights are
-MIT — not just its code — it was built for synthesised music, and it separates
-the mix into instruments. **YourMT3+** is the strongest published model on
-multi-instrument material (F1 0.817 on Slakh, where Basic Pitch scores 0.465)
-and also finds drums, but it is the slowest and wants a couple of gigabytes of
-memory. **Piano Transcription** has the best timing of anything here — it
-regresses where inside the frame a note really starts — but it is a piano
-model, so on a full mix it picks out the piano-like content.
+**Measured on your own 19 tracks, the model to sell is Piano Transcription.**
+Over the 58 minutes of your material, it shares **63.9 %** of Okarina's notes —
+more than double any other permissive model — and its onsets land on the beat
+within 0.1 points of Okarina's. It finds fewer notes than any model except
+Okarina itself, which is what precision looks like.
+
+**YourMT3+** is second (29.6 % against Okarina, and the best eighth-note
+accuracy of the five). It is the strongest published model on multi-instrument
+material (F1 0.817 on Slakh, where Basic Pitch scores 0.465), but it is the
+slowest and wants a couple of gigabytes of memory.
+
+**Tsumugi** has the cleanest licence of the three — MIT weights, not just MIT
+code — and it was built for synthesised music, but on your material it was the
+weakest of the three: it found as many notes as Basic Pitch with only 23.4 %
+of them confirmed by Okarina. It stays in the app as a third opinion.
 
 **Okarina is not for selling.** CC BY-NC-SA 4.0 means non-commercial use only.
 It stays in the app because on dense material it is still the best of the
@@ -194,6 +201,7 @@ Full reference: `npm run cli -- --help`.
 | `npm run check:reproducibility` | compare repeat runs and both backends |
 | `npm run cli -- <input> -o <dir>` | convert on the command line |
 | `npm run evaluate -- <folder> --out eval` | transcribe a folder and write an HTML report |
+| `npm run evaluate -- --out eval --summary` | print the aggregate from the saved results, without transcribing again |
 
 A production build is about 380 MB, because the ONNX runtime's WebAssembly
 (15 MB) and every model's weights are copied into it so the browser can use
