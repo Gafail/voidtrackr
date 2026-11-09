@@ -30,8 +30,14 @@
  * kept notes that upstream drops, and a note could start before the
  * recording did. The notes of most recordings do not change; the ones that
  * do are at the quiet ends and the very end of a file.
+ *
+ * 0.4.0 changed the default model from Basic Pitch to ByteDance's piano
+ * model, after measuring all five over the user's own 19 tracks. The piano
+ * model shared 63.9 % of Okarina's notes where Basic Pitch shared 40.6 %,
+ * and its licence allows the output to be sold. A conversion that does not
+ * name a model now produces different notes, and the stamp says so.
  */
-export const PIPELINE_VERSION = '0.3.1';
+export const PIPELINE_VERSION = '0.4.0';
 
 /** Where the weights came from, for the record. */
 export const MODEL_SOURCE =

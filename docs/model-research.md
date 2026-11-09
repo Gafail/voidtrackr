@@ -660,22 +660,24 @@ Three practical notes:
 
 ## 8. Recommendation
 
-**Keep Basic Pitch as the default.** It is Apache-2.0, it ships, it works the
-moment `npm run model` finishes, and it is the only one that needs no question
-asked about it at all. The default should be the one with no legal question
-attached to it.
-
-**For the best model you can actually ship, use ByteDance's piano model.**
-This is the one the measurement changed our mind about. On your 19 tracks it
-shares **63.9 %** of Okarina's notes — the next permissive model manages 29.6 %
-— and its onsets land on the beat within 0.1 points of Okarina's. It finds
-3500 notes a song against Okarina's 3130, so it is not simply a subset: it is
-finding the same notes. Its licence is **CC BY 4.0**, which permits commercial
-use and has no share-alike obligation.
+**The default is ByteDance's piano model, as of 0.4.0.** This is the one the
+measurement changed our mind about. On your 19 tracks it shares **63.9 %** of
+Okarina's notes — the next permissive model manages 29.6 % — and its onsets
+land on the beat within 0.1 points of Okarina's. It finds 3500 notes a song
+against Okarina's 3130, so it is not simply a subset: it is finding the same
+notes. Its licence is **CC BY 4.0**, which permits commercial use and has no
+share-alike obligation.
 
 It is also the cheapest of the three new models to run: the front end is
 inside the graph, so only the windowing and the onset/offset pairing had to be
 written, and it is smaller and faster than the other two.
+
+**What it costs to switch.** The default used to be Basic Pitch because it
+needs no question asked about it: it is a megabyte, it is Apache-2.0, and it
+works the moment `npm run model` finishes. The piano model needs ~100 MB
+fetched before it will run, and `npm run model` now fetches it, so a fresh
+checkout is still one command. If you would rather have the megabyte and the
+speed, `DEFAULT_MODEL` in `src/core/registry.ts` is still one line.
 
 **YourMT3+ is second** (29.6 % against Okarina, and the best eighth-note
 accuracy of the five). Its weights are Apache-2.0. It is not the first choice
@@ -728,10 +730,10 @@ alone, so it has this caveat in its most concentrated form.
 1. **Listen to the report.** `eval/index.html` has every song with all five
    models side by side, playable, with the original recording alongside.
    That is the final check; no number replaces it.
-2. **Switch the default to the piano model** if you are selling, and keep
-   Basic Pitch as the default if you are not — it is the one that needs no
-   `npm run model:piano` step and no argument. It is one line in
-   `src/core/registry.ts`.
+2. **The default is now the piano model.** *Done: `DEFAULT_MODEL` in
+   `src/core/registry.ts` says `'piano'`, `npm run model` follows it, and the
+   pipeline version moved to 0.4.0 because a conversion that does not name a
+   model now produces different notes.*
 3. **Beat-grid quantisation** is the best remaining idea for the *current*
    model, but it needs a beat tracker that follows the phase. It is not worth
    doing until the model question is settled.

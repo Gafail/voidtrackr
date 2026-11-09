@@ -123,8 +123,19 @@ export const MODELS: Record<ModelId, ModelDescriptor> = {
   },
 };
 
-/** The model used when none is chosen. */
-export const DEFAULT_MODEL: ModelId = 'basic-pitch';
+/**
+ * The model used when none is chosen.
+ *
+ * It was Basic Pitch until 0.4.0, because Basic Pitch needs no question asked
+ * about it: it is a megabyte, it is Apache-2.0, and it works the moment its
+ * weights are fetched. It is also the weakest of the models here.
+ *
+ * The piano model replaced it after being measured over the user's own 19
+ * tracks, where it shared 63.9 % of Okarina's notes against 29.6 % for
+ * YourMT3+ and 23.4 % for Tsumugi. Its licence is CC BY 4.0, so what it
+ * produces can be sold. See `docs/model-research.md`, section 6.
+ */
+export const DEFAULT_MODEL: ModelId = 'piano';
 
 /** Every model, in the order they should be offered. */
 export function listModels(): ModelDescriptor[] {

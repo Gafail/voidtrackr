@@ -1,106 +1,78 @@
 /**
- * Download the Basic Pitch model into `public/model/`.
- *
- * The weights come from Spotify's own repository, which publishes the
- * TensorFlow.js build of the model. The model is Apache-2.0 licensed and is
- * the same file that every Basic Pitch deployment uses.
- *
- * The list of files and their expected hashes comes from
- * `src/core/model.lock.json`, which is also what the pipeline checks at run
- * time. There is exactly one place to change when the model changes.
+ * Fetch the weights of the default model.
  *
  *   node scripts/fetch-model.mjs
+ *
+ * Which model that is comes from `DEFAULT_MODEL` in `src/core/registry.ts`,
+ * so there is one place to change when the default changes and nothing here
+ * to keep in step with it. Each model has its own fetcher, because each one
+ * comes from a different place and lands in a different place:
+ *
+ *   basic-pitch  public/model/       Spotify's own repository
+ *   okarina      models/onnx/        an unofficial Harmonica reimplementation
+ *   tsumugi      models/onnx/tsumugi/
+ *   yourmt3      models/onnx/yourmt3/
+ *   piano        models/onnx/piano/
+ *
+ * Pass a model name to fetch that one instead:
+ *
+ *   node scripts/fetch-model.mjs basic-pitch
  */
 
-import { createWriteStream } from 'node:fs';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { Readable } from 'node:stream';
-import { pipeline as streamPipeline } from 'node:stream/promises';
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const OUTPUT_DIR = resolve(HERE, '..', 'public', 'model');
-const LOCK_PATH = resolve(HERE, '..', 'src', 'core', 'model.lock.json');
+const REGISTRY = resolve(HERE, '..', 'src', 'core', 'registry.ts');
 
-const lock = JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
-const BASE_URL = lock.source;
-
-async function exists(path) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
+/** Read the default model out of the registry. */
+function defaultModel() {
+  const source = readFileSync(REGISTRY, 'utf8');
+  const match = source.match(/DEFAULT_MODEL:\s*ModelId\s*=\s*'([^']+)'/);
+  if (!match) {
+    throw new Error(
+      `Could not find DEFAULT_MODEL in ${REGISTRY}. ` +
+        'The default model is declared there; nothing else needs to change.',
+    );
   }
+  return match[1];
 }
 
-async function download(url, destination) {
-  const response = await fetch(url);
-  if (!response.ok || !response.body) {
-    throw new Error(`GET ${url} failed with ${response.status}`);
-  }
-  await mkdir(dirname(destination), { recursive: true });
-  await streamPipeline(Readable.fromWeb(response.body), createWriteStream(destination));
-}
+/** The fetcher for each model, and the arguments it takes. */
+const FETCHERS = {
+  'basic-pitch': { script: 'fetch-basic-pitch.mjs', args: [] },
+  okarina: { script: 'fetch-okarina.mjs', args: [] },
+  tsumugi: { script: 'fetch-onnx.mjs', args: ['tsumugi'] },
+  yourmt3: { script: 'fetch-onnx.mjs', args: ['yourmt3'] },
+  piano: { script: 'fetch-onnx.mjs', args: ['piano'] },
+};
 
-async function sha256(path) {
-  const { createHash } = await import('node:crypto');
-  const { readFile } = await import('node:fs/promises');
-  return createHash('sha256').update(await readFile(path)).digest('hex');
-}
+function main() {
+  const requested = process.argv[2];
+  const model = requested ?? defaultModel();
+  const fetcher = FETCHERS[model];
 
-async function main() {
-  await mkdir(OUTPUT_DIR, { recursive: true });
-
-  const files = Object.entries(lock.files);
-
-  for (const [name, info] of files) {
-    const destination = join(OUTPUT_DIR, name);
-
-    if (await exists(destination)) {
-      const digest = await sha256(destination);
-      if (digest === info.sha256) {
-        console.log(`ok       ${name} (already present)`);
-        continue;
-      }
-      console.log(`stale    ${name} (checksum mismatch, refetching)`);
-    }
-
-    const url = `${BASE_URL}/${name}`;
-    console.log(`fetching ${url}`);
-    await download(url, destination);
-
-    const digest = await sha256(destination);
-    if (digest !== info.sha256) {
-      throw new Error(
-        `${name} checksum mismatch: expected ${info.sha256}, got ${digest}`,
-      );
-    }
-    console.log(`ok       ${name}`);
+  if (!fetcher) {
+    console.error(`error: there is no fetcher for the model "${model}".`);
+    console.error(`       Known models: ${Object.keys(FETCHERS).join(', ')}`);
+    process.exit(1);
   }
 
-  await writeFile(
-    join(OUTPUT_DIR, 'SOURCE.txt'),
-    [
-      `${lock.displayName} model weights`,
-      '',
-      `Model id: ${lock.id}`,
-      `Source: ${lock.source}`,
-      `Homepage: ${lock.homepage ?? ''}`,
-      `License: ${lock.license}`,
-      '',
-      ...files.map(([name, info]) => `${name.padEnd(24)} sha256 ${info.sha256}`),
-      '',
-    ].join('\n'),
-    'utf8',
+  console.log(`Fetching the ${model} weights (the default model).\n`);
+
+  const result = spawnSync(
+    process.execPath,
+    [resolve(HERE, fetcher.script), ...fetcher.args],
+    { stdio: 'inherit' },
   );
 
-  console.log(`\nModel ready in ${OUTPUT_DIR}`);
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 1);
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+main();

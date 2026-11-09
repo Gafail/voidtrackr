@@ -31,17 +31,21 @@ The tool is complete and verified: 41 tests pass, the type check is clean, the
 production build succeeds, and the browser and the command line produce
 byte-identical MIDI for all five models.
 
-The one open product decision: **Okarina is the best model on this user's
-material** (F1 85.3 % against published Harmonica output, versus 30.4 % for the
-Basic Pitch pipeline) but it is licensed **CC BY-NC-SA 4.0 — non-commercial
-only**. The default is still Basic Pitch (Apache-2.0) because it is
-permissively licensed and works straight after `npm run model`. Flipping the
-default is one line: `DEFAULT_MODEL` in `src/core/registry.ts`.
+**Okarina is the best model on this user's material** (F1 85.3 % against
+published Harmonica output, versus 30.4 % for the Basic Pitch pipeline) but it
+is licensed **CC BY-NC-SA 4.0 — non-commercial only**, so it cannot be the
+default for anything that will be sold.
 
 Measured over the user's own 19 tracks, **ByteDance's piano model (CC BY 4.0)
 is the best model that can be sold**: it shares 63.9 % of Okarina's notes,
-against 29.6 % for YourMT3+ and 23.4 % for Tsumugi. The numbers are in
-`docs/model-research.md` section 6, and the report is `eval/index.html`.
+against 29.6 % for YourMT3+ and 23.4 % for Tsumugi, and it lands its onsets
+within 0.1 points of Okarina's on the beat. It is the default as of 0.4.0.
+The numbers are in `docs/model-research.md` section 6, and the report is
+`eval/index.html`.
+
+Flipping the default is one line: `DEFAULT_MODEL` in `src/core/registry.ts`.
+`npm run model` follows it, so the fetch script never has to be told which
+model the default is.
 
 ## Architecture
 
@@ -119,7 +123,8 @@ ops/nginx/    the deployment configuration
   voidtrackr-headers.conf  the security headers, with this site's CSP
 
 scripts/
-  fetch-model.mjs        fetch and verify the Basic Pitch weights
+  fetch-model.mjs        fetch the default model's weights, whichever that is
+  fetch-basic-pitch.mjs  fetch and verify the Basic Pitch weights
   fetch-okarina.mjs      fetch and verify the Okarina weights
   fetch-onnx.mjs        fetch and verify the Tsumugi, YourMT3+ and piano weights
   make-test-wav.mjs      generate the synthetic test signal
@@ -145,11 +150,12 @@ box.
 
 ```bash
 npm install --no-audit --no-fund
-npm run model              # fetch and verify the Basic Pitch weights
+npm run model              # fetch and verify the default model's weights
+npm run model:piano        # fetch and verify the piano weights (~100 MB)
+npm run model:basic-pitch  # fetch and verify the Basic Pitch weights (~900 KB)
 npm run model:okarina      # fetch and verify the Okarina weights (~21 MB)
 npm run model:tsumugi      # fetch and verify the Tsumugi weights (~74 MB)
 npm run model:yourmt3      # fetch and verify the YourMT3+ weights (~181 MB)
-npm run model:piano        # fetch and verify the piano weights (~100 MB)
 npm run build              # typecheck + vite build → dist/
 ./deploy.sh 192.168.100.109   # build, rsync, install the vhost, reload nginx
 ```
@@ -176,7 +182,8 @@ npm run check:reproducibility
 ## How to debug
 
 - **The app says it cannot read the model file** → the weights are not there.
-  Run `npm run model` (Basic Pitch) or `npm run model:okarina` (Okarina).
+  Run `npm run model` for the default model, or `npm run model:<name>` for a
+  specific one. The error names the command.
 - **"The Okarina weights do not match the pinned version"** → the download was
   truncated or the file was changed. Re-run `npm run model:okarina`; do not
   bypass the check, because a different weight file means different output.
@@ -325,13 +332,16 @@ npm run check:reproducibility
 - **SSH:** the container's host keys were regenerated on provisioning — the
   clone had inherited the template's identity. The old ones are in
   `/root/.trash-removed/` on the box.
-- **Current pipeline version:** 0.3.1 (`src/core/version.ts`) — the Tsumugi
-  and Piano ports brought back in line with upstream at the edges of a
-  recording. The notes of most recordings are unchanged from 0.2.0.
-- **Models in the catalogue:** Basic Pitch (Apache-2.0, the default),
-  Tsumugi (MIT), YourMT3+ (Apache-2.0), Piano Transcription (CC BY 4.0),
+- **Current pipeline version:** 0.4.0 (`src/core/version.ts`) — the default
+  model changed from Basic Pitch to ByteDance's piano model, after all five
+  were measured over the user's own 19 tracks.
+- **Models in the catalogue:** Piano Transcription (CC BY 4.0, the default),
+  Basic Pitch (Apache-2.0), Tsumugi (MIT), YourMT3+ (Apache-2.0),
   Okarina (CC BY-NC-SA 4.0, non-commercial).
-- **Default model:** Basic Pitch, `DEFAULT_MODEL` in `src/core/registry.ts`.
+- **Default model:** Piano Transcription, `DEFAULT_MODEL` in
+  `src/core/registry.ts`. It won the measurement over the user's own 19
+  tracks: 63.9 % of Okarina's notes, against 29.6 % for YourMT3+ and 23.4 %
+  for Tsumugi. `npm run model` fetches whichever model this names.
 - **The licence is shown in the app**, next to the model picker, because it
   decides whether the output can be sold. `commercialUse` in the registry is
   the model's own grant, not a legal opinion: MAESTRO is in the training mix

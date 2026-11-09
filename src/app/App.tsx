@@ -90,13 +90,26 @@ async function loadOkarinaModel(): Promise<TranscriptionModel> {
   return OkarinaModel.load(runner, ONNX_URL, 'm', fingerprint);
 }
 
-/** Read one of the ONNX weight files, relative to the weights root. */
-async function readOnnxFile(path: string): Promise<ArrayBuffer> {
-  const response = await fetch(new URL(path, new URL(ONNX_URL, window.location.href)).href);
-  if (!response.ok) {
-    throw new Error(`Could not read the model file ${path} (${response.status}).`);
-  }
-  return response.arrayBuffer();
+/**
+ * Read one of the ONNX weight files, relative to the weights root.
+ *
+ * The command that fetches the weights is carried in the error, because a
+ * missing file is the common case: the default model needs its weights
+ * fetched before the app will do anything with a recording.
+ */
+function onnxFileReader(fetchCommand: string): (path: string) => Promise<ArrayBuffer> {
+  return async (path: string): Promise<ArrayBuffer> => {
+    const response = await fetch(
+      new URL(path, new URL(ONNX_URL, window.location.href)).href,
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Could not read the model file ${path} (${response.status}). ` +
+          `Run \`${fetchCommand}\` to fetch the weights.`,
+      );
+    }
+    return response.arrayBuffer();
+  };
 }
 
 /**
@@ -117,7 +130,7 @@ async function loadOnnxModel(
   ) => Promise<TranscriptionModel>,
 ): Promise<TranscriptionModel> {
   const fingerprint = await verifyOnnxWeights(
-    readOnnxFile,
+    onnxFileReader(fetchCommand),
     lock as { files: Record<string, { sha256: string }> },
     { dir: directory, files },
     fetchCommand,

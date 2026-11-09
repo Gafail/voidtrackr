@@ -10,7 +10,7 @@ is decoded, transcribed and written back out on the machine that opened it.
 
 ```bash
 npm install
-npm run model     # fetch and verify the Basic Pitch weights (~900 KB)
+npm run model     # fetch and verify the default model's weights (~100 MB)
 npm run dev       # http://127.0.0.1:5173
 ```
 
@@ -47,16 +47,14 @@ next to the picker — it decides whether the output can be sold.
 
 All of them are pinned by SHA-256 and checked before they run.
 
-**The default is Basic Pitch**, because it is the one with no legal question
-attached to it: it works straight after `npm run model`, it is a megabyte, and
-it is Apache-2.0. To switch the default, change `DEFAULT_MODEL` in
-`src/core/registry.ts`.
+**The default is the Piano Transcription model**, because it was measured over
+your own 19 tracks and won. It shares **63.9 %** of Okarina's notes — more than
+double any other permissive model — and its onsets land on the beat within 0.1
+points of Okarina's. It finds fewer notes than any model except Okarina itself,
+which is what precision looks like. Its licence is **CC BY 4.0**, so what it
+produces can be sold.
 
-**Measured on your own 19 tracks, the model to sell is Piano Transcription.**
-Over the 58 minutes of your material, it shares **63.9 %** of Okarina's notes —
-more than double any other permissive model — and its onsets land on the beat
-within 0.1 points of Okarina's. It finds fewer notes than any model except
-Okarina itself, which is what precision looks like.
+To switch the default, change `DEFAULT_MODEL` in `src/core/registry.ts`.
 
 **YourMT3+** is second (29.6 % against Okarina, and the best eighth-note
 accuracy of the five). It is the strongest published model on multi-instrument
@@ -67,6 +65,10 @@ slowest and wants a couple of gigabytes of memory.
 code — and it was built for synthesised music, but on your material it was the
 weakest of the three: it found as many notes as Basic Pitch with only 23.4 %
 of them confirmed by Okarina. It stays in the app as a third opinion.
+
+**Basic Pitch** is the smallest and quickest of the five, and it is the one
+with no legal question attached to it at all — which is why it was the default
+until the measurement came in. Pick it with `--model basic-pitch`.
 
 **Okarina is not for selling.** CC BY-NC-SA 4.0 means non-commercial use only.
 It stays in the app because on dense material it is still the best of the
@@ -83,25 +85,27 @@ being usable.
 pipeline and the model do not change. That is a property of the design rather
 than something to hope for:
 
-- **The model is pinned.** `src/core/model.lock.json` and
-  `src/core/okarina.lock.json` record the SHA-256 of every weight file. The
+- **The model is pinned.** Every model has a lock file in `src/core/` —
+  `model.lock.json`, `piano.lock.json`, `tsumugi.lock.json`, `yourmt3.lock.json`
+  and `okarina.lock.json` — recording the SHA-256 of every weight file. The
   weights are hashed and compared before anything runs; a mismatch stops the
   conversion instead of quietly producing something different.
 - **Every file carries its provenance.** The pipeline version and the model
   fingerprint are written into the exported MIDI as a text meta event:
 
   ```
-  voidtrackr 0.3.1 | model basic-pitch-icassp2022 | sha256:1ed1aaee…
+  voidtrackr 0.4.0 | model piano-transcription-kong-2020 | sha256:27c96172…
   ```
 
 - **The output does not depend on the machine.** The sample rate is read out of
   the file's own header, so the same recording gives the same notes on any
   computer.
 - **The browser and the command line agree.** The browser and the CLI produce
-  byte-identical MIDI for the same input, on both models.
+  byte-identical MIDI for the same input, on all five models.
 - **A test guards it.** `npm test` converts the same recording twice and
   compares the bytes; `npm run check:reproducibility` also compares the native
-  and pure-JavaScript TensorFlow backends.
+  and pure-JavaScript TensorFlow backends, and checks the default model twice
+  over.
 
 To compare any two files:
 
@@ -143,10 +147,11 @@ Requires Node.js 20 or newer.
 
 ```bash
 npm install --no-audit --no-fund
-npm run model              # Basic Pitch weights, verified against the lock file
+npm run model              # the default model's weights, verified against the lock file
+npm run model:piano        # Piano Transcription weights (~100 MB)
+npm run model:basic-pitch  # Basic Pitch weights (~900 KB)
 npm run model:tsumugi      # Tsumugi weights (~74 MB)
 npm run model:yourmt3      # YourMT3+ weights (~181 MB)
-npm run model:piano        # Piano Transcription weights (~100 MB)
 npm run model:okarina      # Okarina weights (~21 MB)
 ```
 
@@ -156,8 +161,9 @@ Pitch is Apache-2.0, Tsumugi is MIT, YourMT3+ is Apache-2.0, Piano
 Transcription is CC BY 4.0, and Okarina is CC BY-NC-SA 4.0 and is for
 non-commercial use only.
 
-Only the model you pick is fetched, so you only need the weights you intend
-to use.
+`npm run model` fetches whichever model is the default, so after a fresh
+checkout that is all you need. The others are only fetched when you ask for
+them.
 
 ## Using it
 
@@ -174,7 +180,8 @@ header, so you can change model before dropping a file in.
 ### On the command line
 
 ```bash
-npm run cli -- song.mp3 -o out/
+npm run cli -- song.mp3 -o out/                  # the default model
+npm run cli -- song.mp3 -o out/ --model basic-pitch
 npm run cli -- song.mp3 -o out/ --model tsumugi
 npm run cli -- song.mp3 -o out/ --model yourmt3
 npm run cli -- song.mp3 -o out/ --model piano
@@ -191,10 +198,11 @@ Full reference: `npm run cli -- --help`.
 | `npm run dev` | the app on `127.0.0.1:5173` |
 | `npm run build` | typecheck and build for production into `dist/` |
 | `npm run preview` | serve `dist/` on `127.0.0.1:4173` |
-| `npm run model` | fetch and verify the Basic Pitch weights |
+| `npm run model` | fetch and verify the default model's weights |
+| `npm run model:piano` | fetch and verify the Piano Transcription weights |
+| `npm run model:basic-pitch` | fetch and verify the Basic Pitch weights |
 | `npm run model:tsumugi` | fetch and verify the Tsumugi weights |
 | `npm run model:yourmt3` | fetch and verify the YourMT3+ weights |
-| `npm run model:piano` | fetch and verify the Piano Transcription weights |
 | `npm run model:okarina` | fetch and verify the Okarina weights |
 | `npm test` | the test suite |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -216,8 +224,8 @@ The app is a static site, so it can be served by any web server. See
 
 Two things will bite you:
 
-- **A strict Content-Security-Policy blocks WebAssembly.** The Okarina model
-  runs through WebAssembly, and the browser treats `WebAssembly.compile` as
+- **A strict Content-Security-Policy blocks WebAssembly.** Four of the five
+  models run through WebAssembly, and the browser treats `WebAssembly.compile` as
   script evaluation. The policy needs `'wasm-unsafe-eval'` in `script-src`.
 - **`crypto.subtle` needs a secure context.** It only exists over HTTPS or on
   localhost. Served over plain HTTP on a LAN it is not there, and the model

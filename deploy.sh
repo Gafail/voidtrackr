@@ -121,20 +121,50 @@ say() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 #    from its own origin. Without them the browser has no model to load and
 #    the app is a dead page — so this is checked, not assumed.
 say "Building the site"
-if [ ! -f "$SCRIPT_DIR/public/model/model.json" ]; then
-  echo "error: the Basic Pitch weights are missing." >&2
-  echo "       Run: npm run model" >&2
+
+# Which model is the default comes from the registry, so the deploy never has
+# to be told what the default is and cannot drift away from it.
+DEFAULT_MODEL="$(sed -n "s/.*DEFAULT_MODEL: ModelId = '\([^']*\)'.*/\1/p" \
+  "$SCRIPT_DIR/src/core/registry.ts")"
+if [ -z "$DEFAULT_MODEL" ]; then
+  echo "error: could not read DEFAULT_MODEL from src/core/registry.ts." >&2
   exit 1
 fi
+
+case "$DEFAULT_MODEL" in
+  basic-pitch)
+    DEFAULT_WEIGHTS="$SCRIPT_DIR/public/model/model.json"
+    DEFAULT_COMMAND="npm run model:basic-pitch"
+    ;;
+  okarina)
+    DEFAULT_WEIGHTS="$SCRIPT_DIR/models/onnx/okarina_m.onnx"
+    DEFAULT_COMMAND="npm run model:okarina"
+    ;;
+  *)
+    DEFAULT_WEIGHTS="$SCRIPT_DIR/models/onnx/$DEFAULT_MODEL"
+    DEFAULT_COMMAND="npm run model:$DEFAULT_MODEL"
+    ;;
+esac
+
+# The default model's weights are not optional: the app loads that model the
+# moment a file is dropped in, so a site without them is a page that does
+# nothing.
+if [ ! -e "$DEFAULT_WEIGHTS" ]; then
+  echo "error: the weights of the default model ($DEFAULT_MODEL) are missing." >&2
+  echo "       Run: $DEFAULT_COMMAND" >&2
+  exit 1
+fi
+
 (cd "$SCRIPT_DIR" && npm run build)
 
 # Okarina's weights sit at the root of model-onnx/; the others have a folder
 # of their own. Each model is checked by the path the browser actually asks
 # for, so a missing model is reported rather than silently broken.
-for model in okarina tsumugi yourmt3 piano; do
+for model in basic-pitch okarina tsumugi yourmt3 piano; do
   case "$model" in
-    okarina) present="$SCRIPT_DIR/dist/model-onnx/okarina_m.onnx" ;;
-    *)       present="$SCRIPT_DIR/dist/model-onnx/$model" ;;
+    basic-pitch) present="$SCRIPT_DIR/dist/model/model.json" ;;
+    okarina)     present="$SCRIPT_DIR/dist/model-onnx/okarina_m.onnx" ;;
+    *)           present="$SCRIPT_DIR/dist/model-onnx/$model" ;;
   esac
   if [ ! -e "$present" ]; then
     echo "" >&2

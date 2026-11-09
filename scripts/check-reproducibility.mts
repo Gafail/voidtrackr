@@ -8,6 +8,7 @@
  *   2. the native tfjs-node backend vs the pure-JS CPU backend
  *      (the CPU backend is what the browser falls back to)
  *   3. the note lists, not just the file bytes
+ *   4. the default model, which is the one most conversions will use
  *
  * The point is to keep the claim honest. If a change to the pipeline makes
  * the output wobble, this is where it shows up.
@@ -30,15 +31,57 @@ import * as tf from '@tensorflow/tfjs';
 import { decodeAudio, prepareMono } from '../src/core/audio';
 import { nodeAudioDecoder } from '../src/core/audio-node';
 import { loadPinnedModel } from '../src/core/basic-pitch';
-import { ModelLock, ModelSource } from '../src/core/model';
+import { ModelLock, ModelSource, TranscriptionModel } from '../src/core/model';
 import modelLock from '../src/core/model.lock.json';
+import { OkarinaModel, OKARINA_FILES } from '../src/core/okarina';
+import okarinaLock from '../src/core/okarina.lock.json';
+import { nodeOnnxRunner } from '../src/core/onnx-node';
+import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from '../src/core/piano';
+import pianoLock from '../src/core/piano.lock.json';
+import { DEFAULT_MODEL, MODELS } from '../src/core/registry';
 import { transcribe } from '../src/core/pipeline';
 import { buildMidiFile } from '../src/core/midi';
 import { provenanceFor } from '../src/core/version';
 
 const FILE = resolve('test/sample.wav');
 const MODEL_PATH = resolve('public/model/model.json');
+const MODEL_DIR = resolve('models', 'onnx');
 const LOCK = modelLock as ModelLock;
+
+/** Load whichever model is the default, the way the command line does. */
+async function loadDefaultModel(): Promise<TranscriptionModel> {
+  if (DEFAULT_MODEL === 'basic-pitch') {
+    return loadPinnedModel(nodeModelSource(MODEL_PATH), LOCK);
+  }
+
+  if (DEFAULT_MODEL === 'okarina') {
+    const lock = okarinaLock as unknown as { files: Record<string, { sha256: string }> };
+    const digests: string[] = [];
+    for (const name of [OKARINA_FILES.frontEnd, OKARINA_FILES.m]) {
+      const bytes = await readFile(join(MODEL_DIR, name));
+      const digest = createHash('sha256').update(bytes).digest('hex');
+      if (digest !== lock.files[name]?.sha256) {
+        throw new Error(`The model's ${name} does not match the pinned version.`);
+      }
+      digests.push(digest);
+    }
+    const fingerprint = createHash('sha256').update(digests.join('')).digest('hex');
+    return OkarinaModel.load(nodeOnnxRunner, MODEL_DIR, 'm', fingerprint);
+  }
+
+  if (DEFAULT_MODEL === 'piano') {
+    const lock = pianoLock as unknown as { files: Record<string, { sha256: string }> };
+    const bytes = await readFile(join(MODEL_DIR, PIANO_DIR, PIANO_FILES.graph));
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    if (digest !== lock.files[`${PIANO_DIR}/${PIANO_FILES.graph}`]?.sha256) {
+      throw new Error("The piano model's weights do not match the pinned version.");
+    }
+    const fingerprint = createHash('sha256').update(digest).digest('hex');
+    return PianoTranscriptionModel.load(nodeOnnxRunner, join(MODEL_DIR, PIANO_DIR), fingerprint);
+  }
+
+  throw new Error(`No loader for the default model "${DEFAULT_MODEL}".`);
+}
 
 /** Read the model off disk, the way the command line does. */
 function nodeModelSource(modelPath: string): ModelSource {
@@ -123,3 +166,49 @@ if (nat1.noteHash !== cpu1.noteHash) {
   console.log(`  ${differences.length} differing notes:`);
   console.log(differences.slice(0, 20).join('\n'));
 }
+
+// --- The default model ---------------------------------------------------
+//
+// The default is the model most conversions will use, so its reproducibility
+// is the claim that matters most. It does not run on TensorFlow.js, so the
+// backend comparison above does not apply; what is checked here is that the
+// same input gives the same bytes twice, and that the file carries the
+// pipeline version and the model fingerprint.
+
+const defaultData = await readFile(FILE);
+const defaultAudio = await decodeAudio(
+  defaultData.buffer.slice(
+    defaultData.byteOffset,
+    defaultData.byteOffset + defaultData.byteLength,
+  ) as ArrayBuffer,
+  nodeAudioDecoder,
+);
+const defaultSamples = prepareMono(defaultAudio);
+
+async function runDefault(): Promise<{ midiHash: string; noteHash: string; notes: number }> {
+  const model = await loadDefaultModel();
+  const result = await transcribe(defaultSamples, { model });
+  const bytes = buildMidiFile(result.tracks, result.tempo, result.key, {
+    provenance: provenanceFor(model),
+  });
+  const notes = result.tracks.flatMap((t) =>
+    t.notes.map(
+      (n) => `${t.name}:${n.pitchMidi}@${n.startTime.toFixed(4)}+${n.duration.toFixed(4)}`,
+    ),
+  );
+  return {
+    midiHash: createHash('sha256').update(bytes).digest('hex').slice(0, 16),
+    noteHash: createHash('sha256').update(notes.join('|')).digest('hex').slice(0, 16),
+    notes: notes.length,
+  };
+}
+
+const d1 = await runDefault();
+const d2 = await runDefault();
+
+console.log(`\ndefault model (${MODELS[DEFAULT_MODEL].displayName}):`);
+console.log(`  ${d1.notes} notes, midi ${d1.midiHash}`);
+console.log('  same input twice:');
+console.log('    midi identical:', d1.midiHash === d2.midiHash);
+console.log('    notes identical:', d1.noteHash === d2.noteHash);
+

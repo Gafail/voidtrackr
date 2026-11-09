@@ -46,6 +46,17 @@ test('the default model is one of the listed models', () => {
   assert.ok(listModels().some((model) => model.id === DEFAULT_MODEL));
 });
 
+test('the default model is the piano model, and its licence allows selling', () => {
+  // The default was changed in 0.4.0, after all five models were measured
+  // over the user's own 19 tracks. The piano model shared 63.9 % of
+  // Okarina's notes where Basic Pitch shared 40.6 %, and its licence is
+  // CC BY 4.0, so what it produces can be sold.
+  //
+  // This is pinned so that changing the default has to be deliberate.
+  assert.equal(DEFAULT_MODEL, 'piano');
+  assert.equal(MODELS[DEFAULT_MODEL].commercialUse, true);
+});
+
 test('an unknown model name is not accepted', () => {
   assert.equal(isModelId('basic-pitch'), true);
   assert.equal(isModelId('not-a-model'), false);

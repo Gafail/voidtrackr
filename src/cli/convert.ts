@@ -166,7 +166,7 @@ voidtrackr — audio to MIDI, locally
 
 Options:
   -o, --out <dir>           Directory for the .mid files (default: current directory)
-      --model <name>        Which model to use: ${Object.keys(MODELS).join(' or ')}
+      --model <name>        Which model to use: ${Object.keys(MODELS).join(' or ')} (default: ${DEFAULT_MODEL})
       --model-path <path>   Path to a Basic Pitch model.json
       --model-dir <dir>     Directory holding the ONNX weights
       --okarina-size <s|m|l> Which Okarina model to use (default m)
@@ -253,7 +253,19 @@ async function verifyOnnxModel(
   fetchCommand: string,
 ): Promise<string> {
   return verifyOnnxWeights(
-    (path) => readOnnxFile(root, path),
+    async (path) => {
+      try {
+        return await readOnnxFile(root, path);
+      } catch (error) {
+        // The weights are not in the repository, so a missing file is the
+        // expected case on a fresh checkout. Say which command fixes it.
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Could not read the model's ${path} (${reason}). ` +
+            `Run \`${fetchCommand}\` to fetch the weights.`,
+        );
+      }
+    },
     lock as { files: Record<string, { sha256: string }> },
     { dir: directory, files },
     fetchCommand,
