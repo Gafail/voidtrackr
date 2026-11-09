@@ -586,16 +586,16 @@ flag read from.
 | option | state |
 | --- | --- |
 | **Okarina** | **Done.** Implemented in `src/core/okarina.ts`, running in the browser through `onnxruntime-web` and on the command line through `onnxruntime-node`. The two produce byte-identical MIDI. Weights are CC BY-NC-SA 4.0, so it stays opt-in for non-commercial use. |
-| **Basic Pitch** | **Done, and the default.** Apache-2.0 weights, `src/core/basic-pitch.ts`. Permissive, but measurably the weakest of the three we can run. |
-| **Tsumugi** | **Not started, but the ONNX export is downloaded and running.** Weights MIT, instrument-agnostic, built for synthesised material. Needs the Neural Semi-CRF decoder and the boundary/velocity/instrument heads ported into `src/core/`, then it slots into the same seam as the other two. The graph itself needs no front end — the CQT is inside it. |
-| **YourMT3+** | **Not started.** Weights Apache-2.0, instrument-agnostic, and the ONNX export is downloaded and loads. The work is heavier: a double-precision 2048-point spectrogram in front of the encoder, and a greedy autoregressive decode loop over 13 channels outside the graph, plus event→note post-processing. Peak memory is around 2.7 GB, which is the real constraint — the browser tab would need it. |
+| **Basic Pitch** | **Done, and the default.** Apache-2.0 weights, `src/core/basic-pitch.ts`. Permissive, but measurably the weakest of the five we can run. |
+| **Tsumugi** | **Done.** `src/core/tsumugi.ts`. The graph, the Neural Semi-CRF decode and the boundary and instrument heads are all in place, and the weights run. Needs the heads to be read at load time, which is why the ONNX runner grew a `read` method. |
+| **YourMT3+** | **Done.** `src/core/yourmt3.ts`. The double-precision spectrogram, the greedy 13-channel decode loop and the event-to-note assembly are all in place. |
+| **ByteDance** | **Done.** `src/core/piano.ts`. The front end is inside the graph, so only the windowing and the note pairing were needed. |
 | **TransKun V2** | Not started, and **not recommended for commercial use**: MIT covers the code, the weights were never licensed, and it was trained on MAESTRO. The JavaScript decoder already exists in `ravetools/piano-visualizer`, so it is the cheapest to try — but only if you are not shipping it. |
-| **ByteDance** | Not started. Best onset and offset accuracy by a distance, weights CC BY 4.0. Piano-only, so it makes most sense combined with stem separation. |
 | **Aria-AMT** / **hFT-Transformer** | Not started. Both permissive and small (hFT-Transformer is 5.48 M parameters, a 22 MB ONNX export, MIT), but piano-only. |
 | **Harmonica reproduction** | Blocked on one line of text. `z-huang/harmonica` has the weights for all five sizes bundled in its PyPI wheel and the best measured numbers of anything available — but it has no `LICENSE` file. See section 3.9. |
 | **A piano-cover model** | Not started. If the goal is a playable arrangement rather than an accurate copy, `tsumugi-piano-cover` is that task. Weights CC BY-NC 4.0. |
 
-Two practical notes:
+Three practical notes:
 
 * **ONNX determinism.** ONNX Runtime's floating-point reduction order can
   depend on the thread count, so `intraOpNumThreads` is pinned to 1 in both
@@ -624,8 +624,13 @@ front end is inside the graph, so what remains is the semi-CRF decoder and
 the heads. YourMT3+ second, because its weights are Apache-2.0 and it is
 instrument-agnostic, but the spectrogram and the decode loop are both outside
 the graph and it wants about 2.7 GB of memory, which is a real constraint in a
-browser tab. Neither is implemented yet; both are third-model work with a
-clear shape.
+browser tab.
+
+**Both of them are now implemented.** `src/core/tsumugi.ts` and
+`src/core/yourmt3.ts` exist, run, and produce notes; so does
+`src/core/piano.ts` for ByteDance's model. The app states each model's
+licence next to the picker, because the licence is part of the model and
+decides whether the output can be sold.
 
 **Do not ship Okarina commercially.** CC BY-NC-SA 4.0 means non-commercial use
 only, and it also carries a share-alike obligation on anything derived from it.
@@ -659,7 +664,8 @@ sold, not before anything is built.
 2. **Implement Tsumugi as the third model**, then measure it against Okarina
    on the same 19 tracks. The comparison is already scripted — `npm run
    evaluate` writes the report — so it is a matter of pointing it at a third
-   model.
+   model. *Done: Tsumugi, YourMT3+ and ByteDance's piano model are all
+   implemented; the report has not been regenerated against them yet.*
 3. **Beat-grid quantisation** is the best remaining idea for the *current*
    model, but it needs a beat tracker that follows the phase. It is not worth
    doing until the model question is settled.

@@ -454,6 +454,47 @@ code {
   text-overflow: ellipsis;
 }
 
+/* The licence of the chosen model. It is the one thing on this page that
+   decides whether the output can be sold, so it is coloured rather than
+   left as grey text. */
+.licence-ok {
+  color: var(--live) !important;
+}
+
+.licence-restricted {
+  color: var(--lan) !important;
+}
+
+.model-name {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.model-licence {
+  margin: 0 0 4px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.model-licence a {
+  color: var(--accent-ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+}
+
+.model-licence a:hover {
+  border-bottom-color: var(--accent);
+}
+
+.model-summary {
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 /* 6. Drop zone ------------------------------------------------------------- */
 
 .dropzone {

@@ -32,30 +32,43 @@ for whatever the model got wrong.
 
 ## The models
 
-Two, behind one interface, so which one runs is a choice rather than a fact
-about the program.
+Five, behind one interface, so which one runs is a choice rather than a fact
+about the program. **The licence is part of the model**, and the app states it
+next to the picker — it decides whether the output can be sold.
 
-| | Basic Pitch | Okarina |
-|---|---|---|
-| By | Spotify | an unofficial ONNX port of Harmonica |
-| Licence | Apache-2.0 | **CC BY-NC-SA 4.0 — non-commercial only** |
-| Weights | ~900 KB | ~21 MB |
-| Runs on | TensorFlow.js | ONNX Runtime (WebAssembly in the browser) |
-| F1 vs published Harmonica output | 30.4 % | **85.3 %** |
+| | Basic Pitch | Tsumugi | YourMT3+ | Piano Transcription | Okarina |
+|---|---|---|---|---|---|
+| By | Spotify | anime-song | Mimbres et al. | ByteDance | an unofficial ONNX port of Harmonica |
+| Licence | Apache-2.0 | **MIT** | **Apache-2.0** | **CC BY 4.0** | **CC BY-NC-SA 4.0 — non-commercial only** |
+| Commercial use | yes | yes | yes | yes | **no** |
+| Weights | ~900 KB | ~74 MB | ~181 MB | ~100 MB | ~21 MB |
+| Runs on | TensorFlow.js | ONNX Runtime (WebAssembly in the browser) | | | |
+| What it is good at | being small and quick | synthesised and anime-style music; instrument-agnostic | many instruments at once, with drums | the exact onset and offset of a piano note | dense mixes; vocal, bass and other |
 
-Both are pinned by SHA-256 and checked before they run.
+All of them are pinned by SHA-256 and checked before they run.
 
-**Okarina is the better model on dense material** — it finds substantially
-more notes and separates them into vocal, bass and other. Its licence is
-non-commercial, so it is opt-in rather than the default. The default is Basic
-Pitch, which is permissively licensed and works straight after `npm run model`.
-To switch it, change `DEFAULT_MODEL` in `src/core/registry.ts`.
+**The default is Basic Pitch**, because it is the one with no legal question
+attached to it: it works straight after `npm run model`, it is a megabyte, and
+it is Apache-2.0. To switch the default, change `DEFAULT_MODEL` in
+`src/core/registry.ts`.
+
+**Tsumugi is the one to reach for** on this kind of material. Its weights are
+MIT — not just its code — it was built for synthesised music, and it separates
+the mix into instruments. **YourMT3+** is the strongest published model on
+multi-instrument material (F1 0.817 on Slakh, where Basic Pitch scores 0.465)
+and also finds drums, but it is the slowest and wants a couple of gigabytes of
+memory. **Piano Transcription** has the best timing of anything here — it
+regresses where inside the frame a note really starts — but it is a piano
+model, so on a full mix it picks out the piano-like content.
+
+**Okarina is not for selling.** CC BY-NC-SA 4.0 means non-commercial use only.
+It stays in the app because on dense material it is still the best of the
+five, but anything it produces should not be sold.
 
 There is a survey of the alternatives, and of what was measured, in
-[`docs/model-research.md`](docs/model-research.md). It includes a table of
-which models are licensed for commercial use — the two here are the two
-implemented; Tsumugi (MIT) and YourMT3+ (Apache-2.0) are the permissive
-candidates that are not built yet.
+[`docs/model-research.md`](docs/model-research.md). It includes the licence
+table for every model considered, and the two that are one email away from
+being usable.
 
 ## The guarantee
 
@@ -97,7 +110,8 @@ audio file
    ├─ decode ────────────► mono 22.05 kHz float samples
    ├─ tune ──────────────► measured against A440, resampled if it is off
    │
-   ├─ model ─────────────► Basic Pitch or Okarina ─► notes in three parts
+   ├─ model ─────────────► Basic Pitch, Tsumugi, YourMT3+, Piano or Okarina
+   │                         ─► notes grouped into parts
    │
    ├─ drums ─────────────► kick, snare and hi-hat from spectral flux
    ├─ tempo & key ───────► comb-filter tempo, Krumhansl-Schmuckler key
@@ -123,12 +137,20 @@ Requires Node.js 20 or newer.
 ```bash
 npm install --no-audit --no-fund
 npm run model              # Basic Pitch weights, verified against the lock file
-npm run model:okarina      # Okarina weights, verified against the lock file (~21 MB)
+npm run model:tsumugi      # Tsumugi weights (~74 MB)
+npm run model:yourmt3      # YourMT3+ weights (~181 MB)
+npm run model:piano        # Piano Transcription weights (~100 MB)
+npm run model:okarina      # Okarina weights (~21 MB)
 ```
 
-Both fetch from the upstream source. Neither is redistributed here, and the
-licence of each travels with it: Basic Pitch is Apache-2.0, Okarina is
-CC BY-NC-SA 4.0 and is for non-commercial use only.
+Each fetches from the upstream source and is checked against its lock file.
+None is redistributed here, and the licence of each travels with it: Basic
+Pitch is Apache-2.0, Tsumugi is MIT, YourMT3+ is Apache-2.0, Piano
+Transcription is CC BY 4.0, and Okarina is CC BY-NC-SA 4.0 and is for
+non-commercial use only.
+
+Only the model you pick is fetched, so you only need the weights you intend
+to use.
 
 ## Using it
 
@@ -146,6 +168,9 @@ header, so you can change model before dropping a file in.
 
 ```bash
 npm run cli -- song.mp3 -o out/
+npm run cli -- song.mp3 -o out/ --model tsumugi
+npm run cli -- song.mp3 -o out/ --model yourmt3
+npm run cli -- song.mp3 -o out/ --model piano
 npm run cli -- song.mp3 -o out/ --model okarina
 npm run cli -- --list-models
 ```
@@ -160,6 +185,9 @@ Full reference: `npm run cli -- --help`.
 | `npm run build` | typecheck and build for production into `dist/` |
 | `npm run preview` | serve `dist/` on `127.0.0.1:4173` |
 | `npm run model` | fetch and verify the Basic Pitch weights |
+| `npm run model:tsumugi` | fetch and verify the Tsumugi weights |
+| `npm run model:yourmt3` | fetch and verify the YourMT3+ weights |
+| `npm run model:piano` | fetch and verify the Piano Transcription weights |
 | `npm run model:okarina` | fetch and verify the Okarina weights |
 | `npm test` | the test suite |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -167,10 +195,10 @@ Full reference: `npm run cli -- --help`.
 | `npm run cli -- <input> -o <dir>` | convert on the command line |
 | `npm run evaluate -- <folder> --out eval` | transcribe a folder and write an HTML report |
 
-A production build is about 52 MB, because the ONNX runtime's WebAssembly
-(15 MB) and the Okarina weights (21 MB) are copied into it so the browser can
-use that model. Without them it is about 3 MB, and only Basic Pitch is
-available.
+A production build is about 380 MB, because the ONNX runtime's WebAssembly
+(15 MB) and every model's weights are copied into it so the browser can use
+them. The weights are fetched when a model is chosen, not when the page
+loads, so the page itself is still small.
 
 ## Deploying
 
@@ -233,11 +261,15 @@ The model weights are **not** part of this repository and are not
 redistributed with it. They are fetched separately and carry their own terms:
 
 - **Basic Pitch** — © Spotify AB, [Apache-2.0](https://github.com/spotify/basic-pitch-ts/blob/main/LICENSE)
+- **Tsumugi** — © the anime-song authors, [MIT](https://huggingface.co/anime-song/instrument_agnostic_amt)
+- **YourMT3+** — © Chang, Benetos, Kirchhoff and Dixon, [Apache-2.0](https://huggingface.co/mimbres/YourMT3). The training mix includes MAESTRO, which is CC BY-NC-SA 4.0.
+- **Piano Transcription** — © Kong, Li, Song, Wan and Wang, [CC BY 4.0](https://zenodo.org/records/4034264). Trained on MAESTRO, which is CC BY-NC-SA 4.0.
 - **Okarina** — © the Harmonica authors, [CC BY-NC-SA 4.0](https://huggingface.co/mazun/rekord). **Non-commercial use only.**
 
-If you need a model you can ship commercially, the survey's
-[licence table](docs/model-research.md#39-the-commercial-question--what-can-actually-be-shipped)
-lists the permissive ones and says what each would take to add.
+The four permissive licences cover the *weights*. Whether a model trained on
+MAESTRO can be used commercially is a separate question that the model cards
+do not settle — the authors of YourMT3+ say so themselves. If you are
+selling, get a lawyer's opinion rather than a licence table.
 
 Other dependencies: [TensorFlow.js](https://github.com/tensorflow/tfjs-js)
 (Apache-2.0), [@tonejs/midi](https://github.com/Tonejs/Midi) (MIT),

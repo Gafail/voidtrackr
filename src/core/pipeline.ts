@@ -84,7 +84,11 @@ export async function transcribe(
   // --- Drums ----------------------------------------------------------
   let drumsDetected = false;
   let drumHits = 0;
-  if (options.detectDrums !== false) {
+  // Some models find the drums themselves. Adding a second drum track on top
+  // of theirs would double every hit, so the detector only runs when the
+  // model did not.
+  const modelHasDrums = modelResult.parts.some((part) => part.kind === 'drums');
+  if (options.detectDrums !== false && !modelHasDrums) {
     report(0.8, 'Looking for drums');
     const drums = analyzeDrums(samples, SAMPLE_RATE);
     drumsDetected = drums.detected;

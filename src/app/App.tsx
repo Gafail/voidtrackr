@@ -11,6 +11,14 @@ import modelLock from '@core/model.lock.json';
 import { OkarinaModel, OKARINA_FILES } from '@core/okarina';
 import okarinaLock from '@core/okarina.lock.json';
 import { createWebOnnxRunner } from '@core/onnx-web';
+import { OnnxRunner } from '@core/onnx';
+import { verifyOnnxWeights } from '@core/onnx-weights';
+import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from '@core/piano';
+import pianoLock from '@core/piano.lock.json';
+import { TsumugiModel, TSUMUGI_DIR, TSUMUGI_FILES } from '@core/tsumugi';
+import tsumugiLock from '@core/tsumugi.lock.json';
+import { YourMt3Model, YOURMT3_DIR, YOURMT3_FILES } from '@core/yourmt3';
+import yourmt3Lock from '@core/yourmt3.lock.json';
 import { DEFAULT_MODEL, listModels, ModelId, MODELS } from '@core/registry';
 import { transcribe } from '@core/pipeline';
 import { buildMidiFile, toArrayBuffer } from '@core/midi';
@@ -23,8 +31,8 @@ import { Player } from './playback';
 
 const MODEL_URL = '/model/model.json';
 
-/** Where the Okarina weights are served from. */
-const OKARINA_URL = '/model-onnx/';
+/** Where the ONNX weights are served from. */
+const ONNX_URL = '/model-onnx/';
 
 /**
  * Read the model over HTTP.
@@ -57,7 +65,7 @@ async function loadOkarinaModel(): Promise<TranscriptionModel> {
 
   for (const name of [OKARINA_FILES.frontEnd, OKARINA_FILES.m]) {
     const expected = lock.files[name]?.sha256;
-    const response = await fetch(new URL(name, new URL(OKARINA_URL, window.location.href)).href);
+    const response = await fetch(new URL(name, new URL(ONNX_URL, window.location.href)).href);
     if (!response.ok) {
       throw new Error(
         `Could not read the Okarina weights ${name} (${response.status}). ` +
@@ -79,7 +87,43 @@ async function loadOkarinaModel(): Promise<TranscriptionModel> {
 
   const fingerprint = await sha256Hex(digests.join(''));
   const runner = await createWebOnnxRunner();
-  return OkarinaModel.load(runner, OKARINA_URL, 'm', fingerprint);
+  return OkarinaModel.load(runner, ONNX_URL, 'm', fingerprint);
+}
+
+/** Read one of the ONNX weight files, relative to the weights root. */
+async function readOnnxFile(path: string): Promise<ArrayBuffer> {
+  const response = await fetch(new URL(path, new URL(ONNX_URL, window.location.href)).href);
+  if (!response.ok) {
+    throw new Error(`Could not read the model file ${path} (${response.status}).`);
+  }
+  return response.arrayBuffer();
+}
+
+/**
+ * Load one of the ONNX models, checking its weights first.
+ *
+ * The same check runs whichever model it is: the files are fetched, hashed
+ * against the lock file, and only then is the model allowed to run.
+ */
+async function loadOnnxModel(
+  lock: unknown,
+  directory: string,
+  files: string[],
+  fetchCommand: string,
+  create: (
+    runner: OnnxRunner,
+    directory: string,
+    fingerprint: string,
+  ) => Promise<TranscriptionModel>,
+): Promise<TranscriptionModel> {
+  const fingerprint = await verifyOnnxWeights(
+    readOnnxFile,
+    lock as { files: Record<string, { sha256: string }> },
+    { dir: directory, files },
+    fetchCommand,
+  );
+  const runner = await createWebOnnxRunner();
+  return create(runner, `${ONNX_URL}${directory}/`, fingerprint);
 }
 
 /** How many edits can be undone. */
@@ -177,10 +221,42 @@ export function App() {
     if (cached) return cached;
 
     let model: TranscriptionModel;
-    if (id === 'okarina') {
-      model = await loadOkarinaModel();
-    } else {
-      model = await loadPinnedModel(modelSource, modelLock as ModelLock);
+    switch (id) {
+      case 'okarina':
+        model = await loadOkarinaModel();
+        break;
+      case 'tsumugi':
+        model = await loadOnnxModel(
+          tsumugiLock,
+          TSUMUGI_DIR,
+          [TSUMUGI_FILES.graph, TSUMUGI_FILES.heads, TSUMUGI_FILES.headsJson],
+          'npm run model:tsumugi',
+          (runner, directory, fingerprint) =>
+            TsumugiModel.load(runner, directory, fingerprint),
+        );
+        break;
+      case 'yourmt3':
+        model = await loadOnnxModel(
+          yourmt3Lock,
+          YOURMT3_DIR,
+          [YOURMT3_FILES.encoder, YOURMT3_FILES.decoder, YOURMT3_FILES.vocab],
+          'npm run model:yourmt3',
+          (runner, directory, fingerprint) =>
+            YourMt3Model.load(runner, directory, fingerprint),
+        );
+        break;
+      case 'piano':
+        model = await loadOnnxModel(
+          pianoLock,
+          PIANO_DIR,
+          [PIANO_FILES.graph],
+          'npm run model:piano',
+          (runner, directory, fingerprint) =>
+            PianoTranscriptionModel.load(runner, directory, fingerprint),
+        );
+        break;
+      default:
+        model = await loadPinnedModel(modelSource, modelLock as ModelLock);
     }
 
     modelCacheRef.current.set(id, model);
@@ -488,11 +564,15 @@ export function App() {
             >
               {listModels().map((model) => (
                 <option key={model.id} value={model.id}>
-                  {model.displayName}
+                  {model.displayName} — {model.license}
                 </option>
               ))}
             </select>
-            <em>{MODELS[modelId].license}</em>
+            <em className={MODELS[modelId].commercialUse ? 'licence-ok' : 'licence-restricted'}>
+              {MODELS[modelId].commercialUse
+                ? `${MODELS[modelId].license} — commercial use permitted`
+                : `${MODELS[modelId].license} — do not sell the output`}
+            </em>
           </label>
           {status === 'done' && (
             <>
@@ -597,6 +677,26 @@ export function App() {
                   <dd>{tracks.length}</dd>
                 </div>
               </dl>
+            </div>
+
+            <div className="panel">
+              <h3>Model</h3>
+              <p className="model-name">{MODELS[modelId].displayName}</p>
+              <p className="model-licence">
+                <a
+                  href={MODELS[modelId].licenseUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  {MODELS[modelId].license}
+                </a>
+              </p>
+              <p className={MODELS[modelId].commercialUse ? 'licence-ok' : 'licence-restricted'}>
+                {MODELS[modelId].commercialUse
+                  ? 'Commercial use permitted by the model licence.'
+                  : 'Non-commercial use only. Do not sell what this model produces.'}
+              </p>
+              <p className="model-summary">{MODELS[modelId].summary}</p>
             </div>
 
             <div className="panel">

@@ -1,0 +1,24 @@
+{
+  "id": "yourmt3-plus-mimbres-2024",
+  "displayName": "YourMT3+ (multi-instrument)",
+  "license": "Apache-2.0",
+  "licenseUrl": "https://huggingface.co/mimbres/YourMT3",
+  "source": "https://huggingface.co/ONLY4DarkKnight/YourMT3-plus-onnx/resolve/main",
+  "homepage": "https://github.com/mimbres/YourMT3",
+  "paper": "https://arxiv.org/abs/2407.04822",
+  "note": "An unofficial ONNX export of the authors' own Apache-2.0 weights. The training mix includes MAESTRO (CC BY-NC-SA 4.0); the authors state in issue #22 that they cannot license third-party datasets, so commercial use is the user's own assessment to make.",
+  "files": {
+    "yourmt3/encoder.onnx": {
+      "sha256": "c1bd9de8bb59e6320b6eaec51ae730ac22636024efd17c6329670bb82cddb307",
+      "bytes": 97415964
+    },
+    "yourmt3/decoder_step.onnx": {
+      "sha256": "cf03a33ffaaa54402b712df8637b2de0d03fb82600628edf958e1ae8ee5cb3f6",
+      "bytes": 92788188
+    },
+    "yourmt3/vocab.json": {
+      "sha256": "b7e3ed53004cf0030e8344ac19d0d4f5ff36bef24694c764203a13ebc40cdfeb",
+      "bytes": 12109
+    }
+  }
+}

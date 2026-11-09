@@ -1,0 +1,20 @@
+{
+  "id": "piano-transcription-kong-2020",
+  "displayName": "Piano Transcription (Kong et al., high-resolution)",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://zenodo.org/records/4034264",
+  "source": "https://huggingface.co/baroned/musicnote-ondevice-models/resolve/fb6a270d0492862389958c898d7def780ad6ccff",
+  "homepage": "https://github.com/bytedance/piano_transcription",
+  "paper": "https://arxiv.org/abs/2010.01815",
+  "note": "ByteDance's high-resolution piano transcription model, as an ONNX export. The weights are CC BY 4.0 on Zenodo record 4034264. Trained on MAESTRO, which is CC BY-NC-SA 4.0. Piano only: on a full mix it picks out the piano-like content.",
+  "files": {
+    "piano/piano_kong.onnx": {
+      "sha256": "ad4b7b49ac0e34e1b429d44fde4b95907eb817830c52a6829b7db67594dd0140",
+      "bytes": 980322
+    },
+    "piano/piano_kong.onnx.data": {
+      "sha256": "c24719fae0be35ec135182d1cd39662815ae754a1a6f43ffe6116fef65314812",
+      "bytes": 98705408
+    }
+  }
+}

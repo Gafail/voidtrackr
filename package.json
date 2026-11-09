@@ -16,6 +16,9 @@
     "check:reproducibility": "tsx scripts/check-reproducibility.mts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "model:okarina": "node scripts/fetch-okarina.mjs",
+    "model:tsumugi": "node scripts/fetch-onnx.mjs tsumugi",
+    "model:yourmt3": "node scripts/fetch-onnx.mjs yourmt3",
+    "model:piano": "node scripts/fetch-onnx.mjs piano",
     "evaluate": "tsx scripts/evaluate-folder.mts"
   },
   "dependencies": {

@@ -188,6 +188,7 @@ export class OkarinaModel implements TranscriptionModel {
 
       const cqtOut = await this.frontEnd.run({
         [this.frontEnd.inputNames[0]]: {
+          type: 'float32',
           data: window,
           dims: [1, FRONTEND_SAMPLES],
         },
@@ -196,7 +197,8 @@ export class OkarinaModel implements TranscriptionModel {
 
       const out = await this.noteHead.run({
         cqt_mag: {
-          data: cqt.data,
+          type: 'float32',
+          data: cqt.data as Float32Array,
           dims: [1, FRONTEND_FRAMES, FRONTEND_BINS],
         },
       });
@@ -210,10 +212,11 @@ export class OkarinaModel implements TranscriptionModel {
           ['offset', target.offset],
         ] as const) {
           const tensor = out[name] as OnnxTensor;
+          const values = tensor.data as Float32Array;
           for (let fr = 0; fr < FRONTEND_FRAMES; fr++) {
             const dst = (k * FRONTEND_FRAMES + fr) * PITCHES;
             const src = (part * FRONTEND_FRAMES + fr) * PITCHES;
-            buffer.set(tensor.data.subarray(src, src + PITCHES), dst);
+            buffer.set(values.subarray(src, src + PITCHES), dst);
           }
         }
       }

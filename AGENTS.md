@@ -68,9 +68,13 @@ src/core/     the pipeline — no DOM, no Node specifics, runs in both
   pipeline.ts     the shared finaliser: tune → model → drums → tempo/key → MIDI
   basic-pitch.ts  the Basic Pitch model and its pinned weight loader
   okarina.ts      the Okarina model: CQT front end, offset-head decoding
+  tsumugi.ts      the Tsumugi model: semi-CRF decode, boundary and instrument heads
+  yourmt3.ts      the YourMT3+ model: spectrogram, token decode, event-to-note
+  piano.ts        the ByteDance piano model: windowing and onset/offset pairing
   onnx.ts         the runtime-agnostic ONNX interface
   onnx-node.ts    ONNX Runtime for Node
   onnx-web.ts     ONNX Runtime for the browser (wasm, lazily imported)
+  onnx-weights.ts the shared weight check against a lock file
   audio.ts        decoding in the browser
   audio-node.ts   decoding in Node
   sample-rate.ts  reading the real sample rate out of the file's header
@@ -89,6 +93,9 @@ src/core/     the pipeline — no DOM, no Node specifics, runs in both
   version.ts      PIPELINE_VERSION, TOOL_NAME and the provenance stamp
   model.lock.json     the pinned Basic Pitch weights
   okarina.lock.json   the pinned Okarina weights
+  tsumugi.lock.json   the pinned Tsumugi weights
+  yourmt3.lock.json   the pinned YourMT3+ weights
+  piano.lock.json     the pinned ByteDance piano weights
 
 src/app/      the React app
   App.tsx        the shell: drop, transcribe, edit, export
@@ -106,6 +113,7 @@ ops/nginx/    the deployment configuration
 scripts/
   fetch-model.mjs        fetch and verify the Basic Pitch weights
   fetch-okarina.mjs      fetch and verify the Okarina weights
+  fetch-onnx.mjs        fetch and verify the Tsumugi, YourMT3+ and piano weights
   make-test-wav.mjs      generate the synthetic test signal
   check-reproducibility.mts   repeat runs and both TF backends
   compare-midi.mjs       diff two MIDI files
@@ -130,6 +138,9 @@ box.
 npm install --no-audit --no-fund
 npm run model              # fetch and verify the Basic Pitch weights
 npm run model:okarina      # fetch and verify the Okarina weights (~21 MB)
+npm run model:tsumugi      # fetch and verify the Tsumugi weights (~74 MB)
+npm run model:yourmt3      # fetch and verify the YourMT3+ weights (~181 MB)
+npm run model:piano        # fetch and verify the piano weights (~100 MB)
 npm run build              # typecheck + vite build → dist/
 ./deploy.sh 192.168.100.109   # build, rsync, install the vhost, reload nginx
 ```
@@ -297,11 +308,17 @@ npm run check:reproducibility
 - **Current pipeline version:** 0.3.0 (`src/core/version.ts`) — the rename to
   voidtrackr; the notes are unchanged from 0.2.0.
 - **Models in the catalogue:** Basic Pitch (Apache-2.0, the default),
+  Tsumugi (MIT), YourMT3+ (Apache-2.0), Piano Transcription (CC BY 4.0),
   Okarina (CC BY-NC-SA 4.0, non-commercial).
 - **Default model:** Basic Pitch, `DEFAULT_MODEL` in `src/core/registry.ts`.
-- **Pinned weights:** `src/core/model.lock.json` (Basic Pitch) and
-  `src/core/okarina.lock.json` (Okarina). Both are checked before the model
-  runs, and a mismatch stops the conversion.
+- **The licence is shown in the app**, next to the model picker, because it
+  decides whether the output can be sold. `commercialUse` in the registry is
+  the model's own grant, not a legal opinion: MAESTRO is in the training mix
+  of most of them and is CC BY-NC-SA 4.0.
+- **Pinned weights:** `src/core/model.lock.json` (Basic Pitch),
+  `src/core/okarina.lock.json`, `src/core/tsumugi.lock.json`,
+  `src/core/yourmt3.lock.json` and `src/core/piano.lock.json`. All are
+  checked before the model runs, and a mismatch stops the conversion.
 - **Repository:** `https://github.com/Gafail/voidtrackr` — public, branch
   `main`. TheVoidCo holds **no copy of this source**; its root `README.md`
   holds the pointer row and its site renders it.

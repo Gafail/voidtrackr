@@ -1,0 +1,32 @@
+{
+  "id": "tsumugi-anime-song-v1.5",
+  "displayName": "Tsumugi (instrument-agnostic v1.5)",
+  "license": "MIT",
+  "licenseUrl": "https://huggingface.co/anime-song/instrument_agnostic_amt",
+  "source": "https://huggingface.co/baroned/musicnote-ondevice-models/resolve/fb6a270d0492862389958c898d7def780ad6ccff",
+  "homepage": "https://github.com/anime-song/tsumugi",
+  "paper": "https://huggingface.co/anime-song/instrument_agnostic_amt",
+  "note": "Tsumugi's instrument-agnostic checkpoint, exported to ONNX. The weights are MIT, not just the code. Designed for anime and synth music. The training mix includes MAESTRO (CC BY-NC-SA 4.0), so commercial use is a judgement call rather than a clean yes.",
+  "files": {
+    "tsumugi/tsumugi_other_v1_5.pos32i_i32.onnx": {
+      "sha256": "b92f240dfdd142b331600092cfb0d074394a3e8f30e8f9c5e663293c17b905a1",
+      "bytes": 3755213
+    },
+    "tsumugi/tsumugi_other_v1_5.pos32i_i32.onnx.data": {
+      "sha256": "809f1ceaf2bb613b19665b1d59f9c478501536018f3764b297a9aaf6f8b38e4c",
+      "bytes": 67988741
+    },
+    "tsumugi/tsumugi_other_v1_5.pos32i_i32.json": {
+      "sha256": "92baaba114dc0fb0423e1d0a190c618474192e68d23682096b4c2ea333710523",
+      "bytes": 346
+    },
+    "tsumugi/tsumugi_other_v1_5.heads.bin": {
+      "sha256": "58b04540b58b2916569c0310c44bffbcaf0b63fc43b487e017400555b3de706e",
+      "bytes": 1890472
+    },
+    "tsumugi/tsumugi_other_v1_5.heads.json": {
+      "sha256": "f1c7a46db603288a6be6c29c413d766ec69320e8cb2d22cacf2ac90ac52aba76",
+      "bytes": 2469
+    }
+  }
+}

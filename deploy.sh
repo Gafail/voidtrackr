@@ -128,11 +128,20 @@ if [ ! -f "$SCRIPT_DIR/public/model/model.json" ]; then
 fi
 (cd "$SCRIPT_DIR" && npm run build)
 
-if [ ! -d "$SCRIPT_DIR/dist/model-onnx" ]; then
-  echo "" >&2
-  echo "warning: the Okarina weights are not present, so the Okarina model" >&2
-  echo "         will not work in the browser. Run: npm run model:okarina" >&2
-fi
+# Okarina's weights sit at the root of model-onnx/; the others have a folder
+# of their own. Each model is checked by the path the browser actually asks
+# for, so a missing model is reported rather than silently broken.
+for model in okarina tsumugi yourmt3 piano; do
+  case "$model" in
+    okarina) present="$SCRIPT_DIR/dist/model-onnx/okarina_m.onnx" ;;
+    *)       present="$SCRIPT_DIR/dist/model-onnx/$model" ;;
+  esac
+  if [ ! -e "$present" ]; then
+    echo "" >&2
+    echo "warning: the $model weights are not present, so that model will not" >&2
+    echo "         work in the browser. Run: npm run model:$model" >&2
+  fi
+done
 
 # 2. Ship the site files.
 say "Uploading site files to ${HOST}:${WEBROOT}"
@@ -180,10 +189,14 @@ say "Validating and reloading nginx"
 
 # 6. Smoke test.
 say "Smoke test"
-for path in / /404.html /robots.txt /model/model.json /model-onnx/okarina_m.onnx /ort/ort-wasm-simd-threaded.wasm; do
+for path in / /404.html /robots.txt /model/model.json /model-onnx/okarina_m.onnx \
+            /model-onnx/tsumugi/tsumugi_other_v1_5.pos32i_i32.onnx \
+            /model-onnx/yourmt3/encoder.onnx \
+            /model-onnx/piano/piano_kong.onnx \
+            /ort/ort-wasm-simd-threaded.wasm; do
   code="$("${SSH[@]}" "$USER@$HOST" \
     "curl -s -o /dev/null -w '%{http_code}' -H 'Host: ${HOST}' http://127.0.0.1$path")"
-  printf '  %-38s %s\n' "$path" "$code"
+  printf '  %-58s %s\n' "$path" "$code"
 done
 
 say "Live at http://${HOST}/"

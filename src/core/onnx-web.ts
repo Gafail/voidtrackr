@@ -8,7 +8,13 @@
  * most sessions never touch it because Basic Pitch does not need it.
  */
 
-import { DETERMINISTIC_SESSION_OPTIONS, OnnxRunner, OnnxTensor } from './onnx';
+import {
+  DETERMINISTIC_SESSION_OPTIONS,
+  ExternalDataFile,
+  OnnxDataType,
+  OnnxRunner,
+  OnnxTensor,
+} from './onnx';
 
 /** Where the WebAssembly runtime is served from. */
 const WASM_PATH = '/ort/';
@@ -28,9 +34,13 @@ export async function createWebOnnxRunner(): Promise<OnnxRunner> {
   ort.env.wasm.numThreads = 1;
 
   return {
-    async createSession(path: string) {
+    async createSession(path: string, externalData?: ExternalDataFile[]) {
       const session = await ort.InferenceSession.create(path, {
         ...DETERMINISTIC_SESSION_OPTIONS,
+        // The runtime fetched the graph over HTTP, so it does not know which
+        // directory it came from and cannot find the sidecar file the graph
+        // refers to. Mounting it under the name the graph uses fixes that.
+        externalData: externalData?.map((file) => ({ path: file.location, data: file.url })),
       });
 
       return {
@@ -39,16 +49,50 @@ export async function createWebOnnxRunner(): Promise<OnnxRunner> {
         async run(feeds: Record<string, OnnxTensor>) {
           const tensors: Record<string, InstanceType<typeof ort.Tensor>> = {};
           for (const [name, tensor] of Object.entries(feeds)) {
-            tensors[name] = new ort.Tensor('float32', tensor.data, tensor.dims);
+            tensors[name] = toOrtTensor(ort, tensor);
           }
           const result = await session.run(tensors);
           const output: Record<string, OnnxTensor> = {};
           for (const [name, tensor] of Object.entries(result)) {
-            output[name] = { data: tensor.data as Float32Array, dims: tensor.dims };
+            output[name] = {
+              type: tensor.type as OnnxDataType,
+              data: tensor.data as Float32Array | Int32Array | BigInt64Array,
+              dims: tensor.dims,
+            };
           }
           return output;
         },
       };
     },
+
+    /** Fetch a file that sits next to the model, such as a vocabulary. */
+    async read(path: string): Promise<ArrayBuffer> {
+      const response = await fetch(new URL(path, window.location.href).href);
+      if (!response.ok) {
+        throw new Error(`Could not read the model file ${path} (${response.status})`);
+      }
+      return response.arrayBuffer();
+    },
   };
+}
+
+/**
+ * Build a runtime tensor.
+ *
+ * The runtime wants a different array type for each element type, and 64-bit
+ * integers are BigInt rather than number, so the cases are spelled out rather
+ * than cast into one.
+ */
+function toOrtTensor(
+  ort: typeof import('onnxruntime-web/wasm'),
+  tensor: OnnxTensor,
+): InstanceType<typeof ort.Tensor> {
+  switch (tensor.type) {
+    case 'float32':
+      return new ort.Tensor('float32', tensor.data as Float32Array, tensor.dims);
+    case 'int32':
+      return new ort.Tensor('int32', tensor.data as Int32Array, tensor.dims);
+    case 'int64':
+      return new ort.Tensor('int64', tensor.data as BigInt64Array, tensor.dims);
+  }
 }

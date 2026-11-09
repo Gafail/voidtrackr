@@ -36,6 +36,13 @@ import modelLock from '../src/core/model.lock.json';
 import { OkarinaModel, OkarinaSize } from '../src/core/okarina';
 import okarinaLock from '../src/core/okarina.lock.json';
 import { nodeOnnxRunner } from '../src/core/onnx-node';
+import { verifyOnnxWeights } from '../src/core/onnx-weights';
+import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from '../src/core/piano';
+import pianoLock from '../src/core/piano.lock.json';
+import { TsumugiModel, TSUMUGI_DIR, TSUMUGI_FILES } from '../src/core/tsumugi';
+import tsumugiLock from '../src/core/tsumugi.lock.json';
+import { YourMt3Model, YOURMT3_DIR, YOURMT3_FILES } from '../src/core/yourmt3';
+import yourmt3Lock from '../src/core/yourmt3.lock.json';
 import { transcribe } from '../src/core/pipeline';
 import { buildMidiFile } from '../src/core/midi';
 import { BeatGrid, distanceToGrid, estimateBeatGrid } from '../src/core/beat';
@@ -66,7 +73,7 @@ function parseArgs(argv: string[]): Options {
   const options: Options = {
     folder: '',
     out: 'eval',
-    models: ['basic-pitch', 'okarina'],
+    models: ['basic-pitch', 'tsumugi', 'piano', 'okarina'],
     okarinaSize: 'm',
     reportOnly: false,
   };
@@ -265,7 +272,70 @@ async function loadModels(options: Options): Promise<Record<string, Transcriptio
     );
   }
 
+  if (options.models.includes('tsumugi')) {
+    const fingerprint = await checkOnnx(
+      tsumugiLock,
+      TSUMUGI_DIR,
+      [TSUMUGI_FILES.graph, TSUMUGI_FILES.heads, TSUMUGI_FILES.headsJson],
+      'npm run model:tsumugi',
+    );
+    models['tsumugi'] = await TsumugiModel.load(
+      nodeOnnxRunner,
+      join(MODEL_DIR, TSUMUGI_DIR),
+      fingerprint,
+    );
+  }
+
+  if (options.models.includes('piano')) {
+    const fingerprint = await checkOnnx(
+      pianoLock,
+      PIANO_DIR,
+      [PIANO_FILES.graph],
+      'npm run model:piano',
+    );
+    models['piano'] = await PianoTranscriptionModel.load(
+      nodeOnnxRunner,
+      join(MODEL_DIR, PIANO_DIR),
+      fingerprint,
+    );
+  }
+
+  if (options.models.includes('yourmt3')) {
+    const fingerprint = await checkOnnx(
+      yourmt3Lock,
+      YOURMT3_DIR,
+      [YOURMT3_FILES.encoder, YOURMT3_FILES.decoder, YOURMT3_FILES.vocab],
+      'npm run model:yourmt3',
+    );
+    models['yourmt3'] = await YourMt3Model.load(
+      nodeOnnxRunner,
+      join(MODEL_DIR, YOURMT3_DIR),
+      fingerprint,
+    );
+  }
+
   return models;
+}
+
+/** Check a model's weights against its lock file and return the fingerprint. */
+async function checkOnnx(
+  lock: unknown,
+  directory: string,
+  files: string[],
+  fetchCommand: string,
+): Promise<string> {
+  return verifyOnnxWeights(
+    async (path: string) => {
+      const bytes = await readFile(join(MODEL_DIR, path));
+      return bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+    },
+    lock as { files: Record<string, { sha256: string }> },
+    { dir: directory, files },
+    fetchCommand,
+  );
 }
 
 function nodeModelSource(modelPath: string): ModelSource {

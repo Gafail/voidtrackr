@@ -44,6 +44,13 @@ import modelLock from '../core/model.lock.json';
 import { OkarinaModel, OkarinaSize, OKARINA_FILES } from '../core/okarina';
 import okarinaLock from '../core/okarina.lock.json';
 import { nodeOnnxRunner } from '../core/onnx-node';
+import { verifyOnnxWeights } from '../core/onnx-weights';
+import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from '../core/piano';
+import pianoLock from '../core/piano.lock.json';
+import { TsumugiModel, TSUMUGI_DIR, TSUMUGI_FILES } from '../core/tsumugi';
+import tsumugiLock from '../core/tsumugi.lock.json';
+import { YourMt3Model, YOURMT3_DIR, YOURMT3_FILES } from '../core/yourmt3';
+import yourmt3Lock from '../core/yourmt3.lock.json';
 import { transcribe } from '../core/pipeline';
 import { buildMidiFile } from '../core/midi';
 import { keyName } from '../core/tempo';
@@ -53,7 +60,7 @@ import { TranscriptionResult } from '../core/types';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_MODEL_PATH = resolve(HERE, '..', '..', 'public', 'model', 'model.json');
-const DEFAULT_OKARINA_DIR = resolve(HERE, '..', '..', 'models', 'onnx');
+const DEFAULT_ONNX_DIR = resolve(HERE, '..', '..', 'models', 'onnx');
 
 interface CliOptions {
   inputs: string[];
@@ -62,8 +69,8 @@ interface CliOptions {
   model: ModelId;
   /** Path to a Basic Pitch model.json. */
   modelPath: string;
-  /** Directory holding the Okarina weights. */
-  okarinaDir: string;
+  /** Directory holding the ONNX weights. */
+  modelDir: string;
   /** Which Okarina model to use. */
   okarinaSize: OkarinaSize;
   drums: boolean;
@@ -78,7 +85,7 @@ function parseArgs(argv: string[]): CliOptions {
     outputDir: '.',
     model: DEFAULT_MODEL,
     modelPath: DEFAULT_MODEL_PATH,
-    okarinaDir: DEFAULT_OKARINA_DIR,
+    modelDir: DEFAULT_ONNX_DIR,
     okarinaSize: 'm',
     drums: true,
     json: false,
@@ -106,7 +113,7 @@ function parseArgs(argv: string[]): CliOptions {
         options.modelPath = argv[++i] ?? options.modelPath;
         break;
       case '--model-dir':
-        options.okarinaDir = argv[++i] ?? options.okarinaDir;
+        options.modelDir = argv[++i] ?? options.modelDir;
         break;
       case '--okarina-size':
         options.okarinaSize = (argv[++i] as OkarinaSize) ?? options.okarinaSize;
@@ -161,7 +168,7 @@ Options:
   -o, --out <dir>           Directory for the .mid files (default: current directory)
       --model <name>        Which model to use: ${Object.keys(MODELS).join(' or ')}
       --model-path <path>   Path to a Basic Pitch model.json
-      --model-dir <dir>     Directory holding the Okarina weights
+      --model-dir <dir>     Directory holding the ONNX weights
       --okarina-size <s|m|l> Which Okarina model to use (default m)
       --no-drums            Skip drum detection
       --tempo <bpm>         Force a tempo instead of estimating one
@@ -180,16 +187,77 @@ Options:
  */
 async function loadModel(options: CliOptions): Promise<TranscriptionModel> {
   if (options.model === 'okarina') {
-    const fingerprint = await verifyOkarinaWeights(options.okarinaDir, options.okarinaSize);
+    const fingerprint = await verifyOkarinaWeights(options.modelDir, options.okarinaSize);
     return OkarinaModel.load(
       nodeOnnxRunner,
-      options.okarinaDir,
+      options.modelDir,
       options.okarinaSize,
       fingerprint,
     );
   }
 
+  if (options.model === 'tsumugi') {
+    const directory = join(options.modelDir, TSUMUGI_DIR);
+    const fingerprint = await verifyOnnxModel(
+      options.modelDir,
+      tsumugiLock,
+      TSUMUGI_DIR,
+      [TSUMUGI_FILES.graph, TSUMUGI_FILES.heads, TSUMUGI_FILES.headsJson],
+      'npm run model:tsumugi',
+    );
+    return TsumugiModel.load(nodeOnnxRunner, directory, fingerprint);
+  }
+
+  if (options.model === 'yourmt3') {
+    const directory = join(options.modelDir, YOURMT3_DIR);
+    const fingerprint = await verifyOnnxModel(
+      options.modelDir,
+      yourmt3Lock,
+      YOURMT3_DIR,
+      [YOURMT3_FILES.encoder, YOURMT3_FILES.decoder, YOURMT3_FILES.vocab],
+      'npm run model:yourmt3',
+    );
+    return YourMt3Model.load(nodeOnnxRunner, directory, fingerprint);
+  }
+
+  if (options.model === 'piano') {
+    const directory = join(options.modelDir, PIANO_DIR);
+    const fingerprint = await verifyOnnxModel(
+      options.modelDir,
+      pianoLock,
+      PIANO_DIR,
+      [PIANO_FILES.graph],
+      'npm run model:piano',
+    );
+    return PianoTranscriptionModel.load(nodeOnnxRunner, directory, fingerprint);
+  }
+
   return loadPinnedModel(nodeModelSource(options.modelPath), modelLock as ModelLock);
+}
+
+/** Read one of the ONNX weight files, relative to the weights root. */
+async function readOnnxFile(root: string, path: string): Promise<ArrayBuffer> {
+  const bytes = await readFile(join(root, path));
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+}
+
+/** Check a model's weights against its lock file. */
+async function verifyOnnxModel(
+  root: string,
+  lock: unknown,
+  directory: string,
+  files: string[],
+  fetchCommand: string,
+): Promise<string> {
+  return verifyOnnxWeights(
+    (path) => readOnnxFile(root, path),
+    lock as { files: Record<string, { sha256: string }> },
+    { dir: directory, files },
+    fetchCommand,
+  );
 }
 
 /** Check the Okarina weights against the lock file. */

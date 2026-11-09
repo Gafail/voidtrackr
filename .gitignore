@@ -22,10 +22,15 @@ test/out/
 public/model/model.json
 public/model/group1-shard1of1.bin
 
-# The Okarina models are fetched with `npm run model:okarina`. They live
-# outside `public/` so they are not copied into the web build. The provenance
-# note beside them is kept.
+# The ONNX model weights are fetched with `npm run model`, `npm run model:okarina`,
+# `npm run model:tsumugi`, `npm run model:yourmt3` and `npm run model:piano`.
+# They live outside `public/` so the build step copies them in rather than
+# the repository carrying them. The provenance note beside them is kept.
 models/onnx/*.onnx
+models/onnx/**/*.onnx
+models/onnx/**/*.onnx.data
+models/onnx/**/*.bin
+models/onnx/**/*.json
 
 # Evaluation output.
 eval/
