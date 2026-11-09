@@ -24,7 +24,7 @@ import { ModelTranscription, TranscriptionModel } from '../src/core/model';
 import { OkarinaModel } from '../src/core/okarina';
 import { nodeOnnxRunner } from '../src/core/onnx-node';
 import { PianoTranscriptionModel } from '../src/core/piano';
-import { TsumugiModel } from '../src/core/tsumugi';
+import { TsumugiModel, isSilent } from '../src/core/tsumugi';
 import { YourMt3Model } from '../src/core/yourmt3';
 import { MODELS } from '../src/core/registry';
 
@@ -157,6 +157,71 @@ test('Tsumugi separates the instruments', async (t) => {
   for (const part of result.parts) {
     assert.ok(part.notes.length > 0, `Tsumugi produced an empty part: ${part.name}`);
   }
+});
+
+test('Tsumugi judges a window by its level, not by how much it varies', () => {
+  // Upstream's gate is the RMS of the whole window: `sqrt(mean(x^2))`, with
+  // no mean subtracted and the zero padding counted in the length. A signal
+  // that sits at a constant offset has a standard deviation of zero but a
+  // level of that offset, and upstream does not treat it as silence.
+  const window = 1000;
+  const gate = -72;
+
+  const silent = new Float32Array(window);
+  assert.equal(isSilent(silent, 0, window, gate), true, 'silence should be silent');
+
+  const constant = new Float32Array(window).fill(0.5);
+  assert.equal(
+    isSilent(constant, 0, window, gate),
+    false,
+    'a constant signal has a level, and upstream does not call it silence',
+  );
+
+  // A window that runs off the end of the recording is padded with zeros, so
+  // its level drops in the same way upstream's padding drops it. The same
+  // samples are above the gate on their own and below it once half the
+  // window is padding.
+  const half = new Float32Array(window).fill(0.5);
+  const paddedLevel = Math.sqrt((0.5 * 0.5 * window) / (window * 2));
+  const paddedGate = 20 * Math.log10(paddedLevel * 1.1);
+
+  assert.equal(
+    isSilent(half, 0, window, paddedGate),
+    false,
+    'the samples on their own are above the gate',
+  );
+  assert.equal(
+    isSilent(half, 0, window * 2, paddedGate),
+    true,
+    'a window padded with zeros is quieter than the same samples on their own',
+  );
+});
+
+test('Tsumugi handles a recording that is not a whole number of windows', async (t) => {
+  if (!(await present('tsumugi', 'tsumugi_other_v1_5.pos32i_i32.onnx'))) {
+    t.skip('the Tsumugi weights are not fetched; run npm run model:tsumugi');
+    return;
+  }
+
+  // The last window of a recording is usually partial, and the frames past
+  // the audio in it are zero padding. The model still gives those frames
+  // scores, so the decoder has to stop where the audio stops.
+  const model = await TsumugiModel.load(nodeOnnxRunner, resolve(ONNX_DIR, 'tsumugi'));
+  const { samples, duration } = await recordingFor(model);
+
+  const extended = new Float32Array(samples.length + Math.round(duration * 22050 * 0.4));
+  extended.set(samples, 0);
+  const padded = extended.slice(0, Math.round(duration * 22050 * 1.4));
+
+  const result = await model.transcribe(padded);
+  checkNotes(result, padded.length / model.inputSampleRate, 'Tsumugi on a partial window');
+
+  const second = await model.transcribe(padded);
+  assert.deepEqual(
+    flat(result),
+    flat(second),
+    'Tsumugi gave a different answer the second time',
+  );
 });
 
 // --- YourMT3+ ------------------------------------------------------------

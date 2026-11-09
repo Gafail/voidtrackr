@@ -631,8 +631,14 @@ function windowStarts(total: number, windowSamples: number, strideSamples: numbe
   return starts;
 }
 
-/** Whether a window is quiet enough to skip. */
-function isSilent(
+/**
+ * Whether a window is quiet enough to skip.
+ *
+ * Exported so the rule can be tested on its own: it is upstream's rule, and
+ * the difference between upstream's rule and a plausible-looking one is
+ * invisible until a window sits right at the gate.
+ */
+export function isSilent(
   samples: Float32Array,
   windowStart: number,
   windowSamples: number,
