@@ -44,7 +44,7 @@ export interface ConvertOutput {
 /**
  * Convert one recording.
  *
- * @param data       the audio file, exactly as it was uploaded.
+ * @param data       the audio file, exactly as it was read.
  * @param request    what to do with it.
  * @param model      the model to use, already loaded.
  * @param provenance the stamp to write into the MIDI file.
