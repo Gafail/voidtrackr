@@ -8,7 +8,7 @@
  * larger, so zooming stays smooth and the drawing stays a single pass.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { noteName } from '@core/constants';
 import { EditorNote, EditorTrack } from './editor';
 
@@ -62,10 +62,41 @@ interface DragState {
  * A canvas cannot be styled with CSS, so the tokens are read off the document
  * root instead. That way the roll keeps the same colours as the rest of the
  * page, and follows the theme when the theme changes.
+ *
+ * The tokens are declared with `light-dark()`, and a custom property hands
+ * that function over unresolved: `getPropertyValue` returns the text
+ * `light-dark(#ffffff, #0c0c13)`, which is not a colour a canvas can use —
+ * an invalid fillStyle is ignored, so the roll came out black with no
+ * labels, no grid and no ruler. The value is therefore put on a real
+ * property first and read back, which is where the browser resolves it.
  */
 function token(name: string, fallback: string): string {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (!raw) return fallback;
+  return resolveColour(raw, fallback);
+}
+
+/** The element a raw token is put on, so the browser can resolve it. */
+let probe: HTMLElement | null = null;
+
+/** Turn a colour the browser only understands in CSS into one it can use. */
+function resolveColour(raw: string, fallback: string): string {
+  if (!raw.includes('light-dark(')) return raw;
+
+  if (!probe) {
+    probe = document.createElement('span');
+    probe.style.display = 'none';
+    document.body.appendChild(probe);
+  }
+
+  probe.style.color = '';
+  probe.style.color = raw;
+  // A value the browser cannot parse is dropped, and an empty style means it
+  // was one it did not understand.
+  if (!probe.style.color) return fallback;
+
+  const resolved = getComputedStyle(probe).color;
+  return resolved || fallback;
 }
 
 export function PianoRoll({
@@ -93,8 +124,43 @@ export function PianoRoll({
 
   // --- Layout helpers --------------------------------------------------
 
-  const allNotes = tracks.flatMap((track) => track.notes);
-  const maxPitch = allNotes.length ? Math.max(...allNotes.map((n) => n.pitch)) + 2 : 72;
+  /**
+   * The span of the keyboard the roll shows.
+   *
+   * It is the range the notes actually cover, with a little room above and
+   * below, clamped to the piano keyboard. Scrolling stops at the ends of it,
+   * so the roll does not run off into empty keys — the whole keyboard is
+   * eighty-eight rows of nothing, and a song usually uses a third of it.
+   */
+  const span = useMemo(() => {
+    const notes = tracks.flatMap((track) => track.notes);
+    if (notes.length === 0) {
+      return { top: 72, bottom: 48 };
+    }
+    let lowest = Infinity;
+    let highest = -Infinity;
+    for (const note of notes) {
+      if (note.pitch < lowest) lowest = note.pitch;
+      if (note.pitch > highest) highest = note.pitch;
+    }
+    return {
+      top: Math.min(108, Math.max(21, highest + 2)),
+      bottom: Math.max(21, Math.min(108, lowest - 2)),
+    };
+  }, [tracks]);
+
+  const maxPitch = span.top;
+
+  /**
+   * How far the roll can scroll down.
+   *
+   * It stops where the lowest note is, so there is no empty keyboard below
+   * the music.
+   */
+  const maxScrollY = Math.max(
+    0,
+    (span.top - span.bottom + 1) * view.rowHeight - (size.height - RULER),
+  );
 
   const timeToX = useCallback(
     (time: number) => GUTTER + time * view.pixelsPerSecond - view.scrollX,
@@ -167,8 +233,8 @@ export function PianoRoll({
     context.fillStyle = surface;
     context.fillRect(0, 0, size.width, size.height);
 
-    const firstPitch = Math.floor(yToPitch(size.height));
-    const lastPitch = Math.ceil(yToPitch(0));
+    const firstPitch = Math.max(span.bottom, Math.floor(yToPitch(size.height)));
+    const lastPitch = Math.min(span.top, Math.ceil(yToPitch(0)));
 
     // Rows, shaded for the black keys. The highest pitch is at the top, so
     // the loop counts down.
@@ -282,7 +348,7 @@ export function PianoRoll({
     context.moveTo(GUTTER + 0.5, 0);
     context.lineTo(GUTTER + 0.5, size.height);
     context.stroke();
-  }, [tracks, selected, view, size, tempo, playhead, timeToX, pitchToY, xToTime, yToPitch, theme]);
+  }, [tracks, selected, view, size, tempo, playhead, timeToX, pitchToY, xToTime, yToPitch, theme, span]);
 
   // --- Sizing ----------------------------------------------------------
 
@@ -408,7 +474,9 @@ export function PianoRoll({
           }
 
           const start = Math.max(0, original.start + deltaTime);
-          const pitch = Math.max(0, Math.min(127, original.pitch + deltaPitch));
+          // The piano keyboard is the limit; the roll's crop follows the
+          // notes, so a note can be moved above the current top of it.
+          const pitch = Math.max(21, Math.min(108, original.pitch + deltaPitch));
           return { ...note, start, pitch };
         }),
       })),
@@ -428,7 +496,7 @@ export function PianoRoll({
     const track = tracks[0];
     if (!track) return;
 
-    const pitch = Math.max(0, Math.min(127, Math.round(yToPitch(y))));
+    const pitch = Math.max(21, Math.min(108, Math.round(yToPitch(y))));
     const start = Math.max(0, xToTime(x));
     const note: EditorNote = {
       id: `new-${Math.random().toString(36).slice(2)}`,
@@ -467,7 +535,7 @@ export function PianoRoll({
     setView((previous) => ({
       ...previous,
       scrollX: Math.max(0, previous.scrollX + dx),
-      scrollY: Math.max(0, previous.scrollY + dy),
+      scrollY: Math.min(maxScrollY, Math.max(0, previous.scrollY + dy)),
     }));
   };
 
