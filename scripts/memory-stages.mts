@@ -7,9 +7,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { installTfjsNodeBackend } from '../src/api/backend';
-import { convertAudio } from '../src/api/convert';
-import { loadModel } from '../src/api/model-loader';
+import { installTfjsNodeBackend } from '../src/core/backend';
+import { convertAudio } from '../src/core/convert';
+import { loadModel } from '../src/core/model-loader';
 import { decodeAudio, prepareMono } from '../src/core/audio';
 import { nodeAudioDecoder } from '../src/core/audio-node';
 import { analyzeDrums } from '../src/core/drums';

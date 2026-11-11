@@ -2,216 +2,79 @@
  * The OpenAPI document the API serves.
  *
  * It is built from the same numbers the code uses — the model list, the
- * parameter names, the version — so it cannot drift away from what the
+ * parameter table, the version — so it cannot drift away from what the
  * server actually does.
+ *
+ * There is no conversion endpoint in it, because there is none in the
+ * server. The document says so in its description, so that a client
+ * reading it learns the rule rather than only finding out by trying.
  */
 
 import { MODEL_IDS, DEFAULT_MODEL, MODELS } from '../core/registry';
+import { PARAMETERS } from '../core/parameters';
 import { PIPELINE_VERSION } from '../core/version';
-import { PARAMETER_NAMES } from './params';
 
 /** The document, as a plain object. */
 export function openApiDocument(): Record<string, unknown> {
-  const modelParameter = {
-    name: 'model',
+  const parameterList = PARAMETERS.map((parameter) => ({
+    name: parameter.name,
     in: 'query',
     required: false,
-    description: 'Which model to use.',
+    description: parameter.description,
     schema: {
-      type: 'string',
-      enum: [...MODEL_IDS],
-      default: DEFAULT_MODEL,
+      type: parameter.type === 'model' ? 'string' : parameter.type,
+      ...(parameter.allowed ? { enum: [...parameter.allowed] } : {}),
+      default: parameter.default,
     },
-  };
+  }));
 
-  const scalarParameters = [
-    {
-      name: 'okarinaSize',
-      in: 'query',
-      required: false,
-      description: 'Which Okarina model to use.',
-      schema: { type: 'string', enum: ['s', 'm', 'l'], default: 'm' },
-    },
-    {
-      name: 'drums',
-      in: 'query',
-      required: false,
-      description: 'Look for a drum kit.',
-      schema: { type: 'boolean', default: true },
-    },
-    {
-      name: 'tempo',
-      in: 'query',
-      required: false,
-      description: 'Force a tempo, in beats per minute.',
-      schema: { type: 'number', minimum: 20, maximum: 400 },
-    },
-    {
-      name: 'rangeLow',
-      in: 'query',
-      required: false,
-      description: 'Lowest frequency to keep, in hertz.',
-      schema: { type: 'number', minimum: 0, default: 0 },
-    },
-    {
-      name: 'rangeHigh',
-      in: 'query',
-      required: false,
-      description: 'Highest frequency to keep, in hertz.',
-      schema: { type: 'number', minimum: 0 },
-    },
-    {
-      name: 'grid',
-      in: 'query',
-      required: false,
-      description: 'Slots per second. Zero leaves the notes where the model put them.',
-      schema: { type: 'number', minimum: 0, default: 0 },
-    },
-    {
-      name: 'gridPhase',
-      in: 'query',
-      required: false,
-      description: 'Where the first slot sits, in milliseconds.',
-      schema: { type: 'number', default: 0 },
-    },
-    {
-      name: 'pianify',
-      in: 'query',
-      required: false,
-      description: 'Arrange the notes for two hands.',
-      schema: { type: 'boolean', default: false },
-    },
-    {
-      name: 'format',
-      in: 'query',
-      required: false,
-      description: 'MIDI, or the notes as JSON.',
-      schema: { type: 'string', enum: ['midi', 'json'], default: 'midi' },
-    },
-  ];
-
-  const errorSchema = {
-    type: 'object',
-    properties: {
-      error: {
-        type: 'object',
-        required: ['code', 'message'],
-        properties: {
-          code: {
-            type: 'string',
-            enum: [
-              'bad_request',
-              'unsupported_media_type',
-              'not_found',
-              'method_not_allowed',
-              'payload_too_large',
-              'unprocessable_entity',
-              'model_unavailable',
-              'unauthorized',
-              'busy',
-              'internal_error',
-            ],
-          },
-          message: { type: 'string' },
-          details: { type: 'object', additionalProperties: true },
-        },
-      },
-    },
-  };
-
-  const responses = (description: string) => ({
-    '400': { description: 'The request does not make sense.', content: { 'application/json': { schema: errorSchema } } },
-    '401': { description: 'The token is missing or wrong.', content: { 'application/json': { schema: errorSchema } } },
-    '404': { description: 'There is nothing at that address.', content: { 'application/json': { schema: errorSchema } } },
-    '405': { description: 'That method is not allowed here.', content: { 'application/json': { schema: errorSchema } } },
-    '413': { description: 'The upload is too large.', content: { 'application/json': { schema: errorSchema } } },
-    '415': { description: 'The media type is not one the API takes.', content: { 'application/json': { schema: errorSchema } } },
-    '422': { description: 'The audio could not be read.', content: { 'application/json': { schema: errorSchema } } },
-    '503': { description: 'The server is busy, or a model is not installed.', content: { 'application/json': { schema: errorSchema } } },
-    default: { description, content: { 'application/json': { schema: errorSchema } } },
-  });
+  const modelList = MODEL_IDS.map((id) => ({
+    id,
+    displayName: MODELS[id].displayName,
+    license: MODELS[id].license,
+    commercialUse: MODELS[id].commercialUse,
+    weightsUrl: MODELS[id].weightsPath,
+    weightsRoot: MODELS[id].weightsRoot,
+    fetchCommand: MODELS[id].fetchCommand,
+  }));
 
   return {
     openapi: '3.1.0',
     info: {
       title: 'voidtrackr',
       version: PIPELINE_VERSION,
-      summary: 'Audio to MIDI, on your own machine.',
+      summary: 'The catalogue of what voidtrackr can do.',
       description:
-        'Convert a recording to multi-track MIDI. The same pipeline the browser ' +
-        'site and the command line use, so the file a caller gets is byte ' +
-        'identical to the one they would get from either of them.\n\n' +
-        'The audio is read into memory, converted, and the MIDI is sent back. ' +
-        'Nothing is written to disk.',
-      license: { name: 'MIT', identifier: 'MIT' },
+        'This API describes the tool; it does not run it. No endpoint here ' +
+        'accepts a recording, and the server never reads a request body: a ' +
+        'recording is converted on the machine that holds it, in the browser ' +
+        'or on the command line. The model weights are served from this ' +
+        'origin, which is what a client downloads.',
     },
-    servers: [{ url: '/api', description: 'This site' }],
-    tags: [
-      { name: 'convert', description: 'Turning audio into MIDI.' },
-      { name: 'the api itself', description: 'What this API is and what it can do.' },
-    ],
+    servers: [{ url: '/api', description: 'This server.' }],
     paths: {
-      '/convert': {
-        post: {
-          tags: ['convert'],
-          summary: 'Convert an audio file to MIDI.',
+      '/': {
+        get: {
+          summary: 'The index of the API, or a page about it.',
           description:
-            'Send the recording in a multipart part called `file`, or as the ' +
-            'request body with an audio content type. The reply is the MIDI ' +
-            'file, unless `format=json` asks for the notes instead.',
-          operationId: 'convert',
-          parameters: [modelParameter, ...scalarParameters],
-          requestBody: {
-            required: true,
-            content: {
-              'multipart/form-data': {
-                schema: {
-                  type: 'object',
-                  required: ['file'],
-                  properties: {
-                    file: { type: 'string', format: 'binary' },
-                    ...Object.fromEntries(
-                      scalarParameters.map((parameter) => [
-                        parameter.name,
-                        { type: parameter.schema.type },
-                      ]),
-                    ),
-                  },
-                },
-              },
-              'audio/wav': { schema: { type: 'string', format: 'binary' } },
-              'audio/mpeg': { schema: { type: 'string', format: 'binary' } },
-              'audio/x-wav': { schema: { type: 'string', format: 'binary' } },
-            },
-          },
+            'Answers with JSON, or with a page when the caller asks for HTML.',
           responses: {
             '200': {
-              description: 'The MIDI file.',
-              headers: {
-                'X-Voidtrackr-Pipeline': { description: 'The pipeline version.', schema: { type: 'string' } },
-                'X-Voidtrackr-Model': { description: 'The model that was used.', schema: { type: 'string' } },
-                'X-Voidtrackr-Notes': { description: 'How many notes it found.', schema: { type: 'integer' } },
-                'X-Voidtrackr-Tempo': { description: 'The tempo, in beats per minute.', schema: { type: 'string' } },
-                'X-Voidtrackr-Key': { description: 'The key it found.', schema: { type: 'string' } },
-                'X-Voidtrackr-SHA256': { description: 'The hash of the MIDI file.', schema: { type: 'string' } },
-              },
+              description: 'The index.',
               content: {
-                'audio/midi': { schema: { type: 'string', format: 'binary' } },
                 'application/json': { schema: { type: 'object' } },
+                'text/html': { schema: { type: 'string' } },
               },
             },
-            ...responses('Something went wrong.'),
           },
         },
       },
       '/health': {
         get: {
-          tags: ['the api itself'],
           summary: 'Whether the server is up.',
-          operationId: 'health',
           responses: {
             '200': {
-              description: 'The server is up.',
+              description: 'The state of the server.',
               content: {
                 'application/json': {
                   schema: {
@@ -219,12 +82,9 @@ export function openApiDocument(): Record<string, unknown> {
                     properties: {
                       status: { type: 'string' },
                       pipeline: { type: 'string' },
-                      threads: { type: 'integer' },
                       defaultModel: { type: 'string' },
                       models: { type: 'array', items: { type: 'string' } },
-                      conversions: { type: 'integer' },
-                      failures: { type: 'integer' },
-                      uptimeSeconds: { type: 'integer' },
+                      uptimeSeconds: { type: 'number' },
                     },
                   },
                 },
@@ -235,12 +95,10 @@ export function openApiDocument(): Record<string, unknown> {
       },
       '/models': {
         get: {
-          tags: ['the api itself'],
-          summary: 'The models and their licences.',
+          summary: 'The models, their licences and where their weights are.',
           description:
-            'The licence decides whether the output can be sold, so it is ' +
-            'stated plainly rather than buried.',
-          operationId: 'models',
+            'The licence on each entry decides whether the output can be ' +
+            'sold, so it is stated rather than buried.',
           responses: {
             '200': {
               description: 'The catalogue.',
@@ -259,7 +117,9 @@ export function openApiDocument(): Record<string, unknown> {
                             displayName: { type: 'string' },
                             license: { type: 'string' },
                             commercialUse: { type: 'boolean' },
-                            summary: { type: 'string' },
+                            weightsUrl: { type: 'string' },
+                            weightsRoot: { type: 'string' },
+                            fetchCommand: { type: 'string' },
                           },
                         },
                       },
@@ -271,11 +131,54 @@ export function openApiDocument(): Record<string, unknown> {
           },
         },
       },
+      '/parameters': {
+        get: {
+          summary: 'The parameters a conversion takes, and their defaults.',
+          description:
+            'These are applied by the client. The names are the ones the ' +
+            'site uses and the ones the command line takes, so a value set ' +
+            'in one means the same thing in the others.',
+          responses: {
+            '200': {
+              description: 'The parameter table.',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      parameters: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            name: { type: 'string' },
+                            type: {
+                              type: 'string',
+                              enum: ['model', 'enum', 'boolean', 'number'],
+                            },
+                            default: {},
+                            description: { type: 'string' },
+                            allowed: {
+                              type: 'array',
+                              items: { type: 'string' },
+                            },
+                            flag: { type: 'string' },
+                            unit: { type: 'string' },
+                          },
+                        },
+                      },
+                      note: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       '/openapi.json': {
         get: {
-          tags: ['the api itself'],
           summary: 'This document.',
-          operationId: 'openapi',
           responses: {
             '200': {
               description: 'The OpenAPI document.',
@@ -284,29 +187,27 @@ export function openApiDocument(): Record<string, unknown> {
           },
         },
       },
-      '/': {
-        get: {
-          tags: ['the api itself'],
-          summary: 'What this API is.',
-          operationId: 'index',
-          responses: {
-            '200': {
-              description: 'An index of the endpoints, or a page about them.',
-              content: {
-                'application/json': { schema: { type: 'object' } },
-                'text/html': { schema: { type: 'string' } },
-              },
-            },
-          },
+    },
+    components: {
+      parameters: {
+        conversionParameters: {
+          description:
+            'The parameters a conversion takes. They are applied by the ' +
+            'client, on the machine that holds the recording.',
+          in: 'query',
+          name: 'parameters',
+          schema: { type: 'object' },
+          example: { model: DEFAULT_MODEL, drums: true },
         },
       },
     },
-    'x-parameters': [...PARAMETER_NAMES],
-    'x-models': MODEL_IDS.map((id) => ({
-      id,
-      displayName: MODELS[id].displayName,
-      license: MODELS[id].license,
-      commercialUse: MODELS[id].commercialUse,
-    })),
+    'x-voidtrackr': {
+      acceptsRecordings: false,
+      parameters: parameterList,
+      models: modelList,
+      note:
+        'No endpoint accepts a recording. The conversion runs on the client, ' +
+        'and the model weights are fetched from this origin.',
+    },
   };
 }

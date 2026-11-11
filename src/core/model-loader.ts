@@ -15,20 +15,20 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { loadPinnedModel } from '../core/basic-pitch';
-import { ModelLock, ModelSource, TranscriptionModel } from '../core/model';
-import modelLock from '../core/model.lock.json';
-import { OkarinaModel, OkarinaSize, OKARINA_FILES } from '../core/okarina';
-import okarinaLock from '../core/okarina.lock.json';
-import { nodeOnnxRunner } from '../core/onnx-node';
-import { verifyOnnxWeights } from '../core/onnx-weights';
-import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from '../core/piano';
-import pianoLock from '../core/piano.lock.json';
-import { TsumugiModel, TSUMUGI_DIR, TSUMUGI_FILES } from '../core/tsumugi';
-import tsumugiLock from '../core/tsumugi.lock.json';
-import { YourMt3Model, YOURMT3_DIR, YOURMT3_FILES } from '../core/yourmt3';
-import yourmt3Lock from '../core/yourmt3.lock.json';
-import { ModelId } from '../core/registry';
+import { loadPinnedModel } from './basic-pitch';
+import { ModelLock, ModelSource, TranscriptionModel } from './model';
+import modelLock from './model.lock.json';
+import { OkarinaModel, OkarinaSize, OKARINA_FILES } from './okarina';
+import okarinaLock from './okarina.lock.json';
+import { nodeOnnxRunner } from './onnx-node';
+import { verifyOnnxWeights } from './onnx-weights';
+import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from './piano';
+import pianoLock from './piano.lock.json';
+import { TsumugiModel, TSUMUGI_DIR, TSUMUGI_FILES } from './tsumugi';
+import tsumugiLock from './tsumugi.lock.json';
+import { YourMt3Model, YOURMT3_DIR, YOURMT3_FILES } from './yourmt3';
+import yourmt3Lock from './yourmt3.lock.json';
+import { ModelId } from './registry';
 
 /** Where the weights are. */
 export interface ModelLocation {

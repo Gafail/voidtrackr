@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { loadModel } from '../src/api/model-loader';
+import { loadModel } from '../src/core/model-loader';
 import { decodeAudio, prepareMono } from '../src/core/audio';
 import { nodeAudioDecoder } from '../src/core/audio-node';
 import { ModelId } from '../src/core/registry';

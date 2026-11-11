@@ -240,24 +240,33 @@ Full reference: `npm run cli -- --help`.
 ### Over HTTP
 
 The site has an address you can call. The box runs a small service
-alongside it, at the same origin, and it does the same work through the
-same code — so the file it gives you is byte-identical to the one the
-command line gives you.
+alongside it, at the same origin, that describes what the tool can do: the
+models and their licences, the parameters and their defaults, and where
+each model's weights are served from.
 
 ```bash
-curl -F file=@song.wav http://192.168.100.109/api/convert -o song.mid
-curl -F file=@song.wav -F model=okarina -F pianify=true \
-     http://192.168.100.109/api/convert -o song.mid
-curl -F file=@song.wav -F format=json http://192.168.100.109/api/convert
+curl http://192.168.100.109/api/models
+curl http://192.168.100.109/api/parameters
 ```
 
 There is a page about it at `/api/`, an OpenAPI document at
 `/api/openapi.json`, and the whole thing is in
 [`docs/api.md`](docs/api.md).
 
-One thing to be plain about: in the browser the audio never leaves your
-machine, and that has not changed. Through the API it goes to the box,
-which is on your own network. Nothing in the site calls the API.
+**It does not take a recording.** There is no endpoint that accepts one and
+the server never reads a request body, so the audio cannot leave the
+machine it is on — not through the API, not through anything else. A
+script converts with the command line, optionally taking the model from
+the site:
+
+```bash
+npm run cli -- --server http://192.168.100.109 song.wav -o .
+```
+
+That fetches the model's weights over HTTP, checks each file against its
+pinned hash, and converts. The recording is read from disk and stays
+there. The file it produces is byte-identical to one made with the weights
+already on disk, and there is a test that runs both and compares them.
 
 ## Commands
 

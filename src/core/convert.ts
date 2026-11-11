@@ -7,15 +7,15 @@
  * path rather than two that agree today.
  */
 
-import { decodeAudio, prepareMono } from '../core/audio';
-import { nodeAudioDecoder } from '../core/audio-node';
-import { buildMidiFile } from '../core/midi';
-import { transcribe } from '../core/pipeline';
-import { FrequencyRange } from '../core/range';
-import { QuantiseOptions } from '../core/quantise';
-import { PianifyOptions } from '../core/pianify';
-import { TranscriptionModel } from '../core/model';
-import { ProgressInfo, TranscriptionResult } from '../core/types';
+import { decodeAudio, prepareMono } from './audio';
+import { nodeAudioDecoder } from './audio-node';
+import { buildMidiFile } from './midi';
+import { transcribe } from './pipeline';
+import { FrequencyRange } from './range';
+import { QuantiseOptions } from './quantise';
+import { PianifyOptions } from './pianify';
+import { TranscriptionModel } from './model';
+import { ProgressInfo, TranscriptionResult } from './types';
 
 /** What a caller asks for. */
 export interface ConvertRequest {

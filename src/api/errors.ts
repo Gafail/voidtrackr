@@ -9,15 +9,9 @@
 
 /** The codes the API answers with. */
 export type ApiErrorCode =
-  | 'bad_request'
-  | 'unsupported_media_type'
   | 'not_found'
   | 'method_not_allowed'
-  | 'payload_too_large'
-  | 'unprocessable_entity'
-  | 'model_unavailable'
-  | 'unauthorized'
-  | 'busy'
+  | 'gone'
   | 'internal_error';
 
 /** The body every error comes back as. */
@@ -59,19 +53,6 @@ export class ApiError extends Error {
     };
   }
 
-  /** A bad request: the caller sent something that does not make sense. */
-  static badRequest(message: string, details?: Record<string, unknown>): ApiError {
-    return new ApiError('bad_request', 400, message, details);
-  }
-
-  /** The media type is not one the API can take. */
-  static unsupportedMediaType(
-    message: string,
-    details?: Record<string, unknown>,
-  ): ApiError {
-    return new ApiError('unsupported_media_type', 415, message, details);
-  }
-
   /** Nothing is at that address. */
   static notFound(message: string): ApiError {
     return new ApiError('not_found', 404, message);
@@ -85,32 +66,6 @@ export class ApiError extends Error {
       `${method} is not allowed here.`,
       { allowed },
     );
-  }
-
-  /** The upload is bigger than the server will take. */
-  static payloadTooLarge(message: string, details?: Record<string, unknown>): ApiError {
-    return new ApiError('payload_too_large', 413, message, details);
-  }
-
-  /** The audio could not be read, or the request was otherwise well-formed
-   *  but could not be carried out. */
-  static unprocessable(message: string, details?: Record<string, unknown>): ApiError {
-    return new ApiError('unprocessable_entity', 422, message, details);
-  }
-
-  /** The model asked for is not on this machine. */
-  static modelUnavailable(message: string, details?: Record<string, unknown>): ApiError {
-    return new ApiError('model_unavailable', 503, message, details);
-  }
-
-  /** The token is missing or wrong. */
-  static unauthorized(message: string): ApiError {
-    return new ApiError('unauthorized', 401, message);
-  }
-
-  /** The server is already working on as much as it can. */
-  static busy(message: string, details?: Record<string, unknown>): ApiError {
-    return new ApiError('busy', 503, message, details);
   }
 
   /** Something went wrong that the caller cannot fix. */

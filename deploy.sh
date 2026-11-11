@@ -187,16 +187,15 @@ say "Uploading site files to ${HOST}:${WEBROOT}"
 #    address to call. The API is a small Node process on the box, listening
 #    on 127.0.0.1, and nginx proxies /api/ to it.
 #
-#    It is bundled into one file so the box does not need the repository or
-#    a development toolchain. The packages that carry native code are
-#    installed by npm on the box, and the weights are the ones the site
-#    already serves, so the box holds one copy of them rather than two.
+#    It describes the tool: the models, their licences, the parameters and
+#    where the weights are. It does not convert anything and it never
+#    receives a recording, so it has no dependencies at all — the bundle is
+#    one file and the box installs nothing.
 say "Installing the API"
 "${SSH[@]}" "$USER@$HOST" "mkdir -p '$API_DIR'"
 # This one does not delete what is on the box. The API directory holds the
-# installed dependencies and the smoke test's recording, and `--delete`
-# would throw both away on every deploy — and reinstalling the ONNX runtime
-# is a large download on a small box.
+# smoke test's recording, and `--delete` would throw it away on every
+# deploy.
 rsync -az --chmod=D755,F644 -e "$RSYNC_SSH" \
   --rsync-path="mkdir -p '$API_DIR' && rsync" \
   "$SCRIPT_DIR/dist-api/" "$USER@$HOST:$API_DIR/"
@@ -205,30 +204,15 @@ rsync -az --chmod=D755,F644 -e "$RSYNC_SSH" \
 # repository, so the check does not need a real song.
 "${SCP[@]}" "$SCRIPT_DIR/test/sample.wav" "$USER@$HOST:$API_DIR/test.wav"
 
-# The dependencies are only installed when they are not there already, or
-# when the list has changed. `onnxruntime-node` is a large download and
-# there is no point repeating it on every deploy.
-#
-# The install is capped and the cache is cleared afterwards, because the box
-# has a gigabyte of memory: npm unpacking a package this large will fill the
-# page cache and take the box to its knees if it is allowed to use all of it.
-# The first attempt at this did exactly that, and the box had to be
-# restarted. Capping npm's heap and throwing the cache away afterwards keeps
-# it responsive.
+# The API has no dependencies, so there is nothing to install. The
+# directory the old one left behind — the ONNX runtime and TensorFlow.js,
+# which the server used to need because it used to do the converting — is
+# moved aside rather than deleted, so it can be put back if it is wanted.
 "${SSH[@]}" "$USER@$HOST" "
-  cd '$API_DIR' || exit 1
-  if [ ! -d node_modules/onnxruntime-node ] || [ package.json -nt node_modules/.installed ]; then
-    echo 'installing the API dependencies...'
-    NODE_OPTIONS=--max-old-space-size=384 npm install --omit=dev --no-audit --no-fund \
-      --loglevel=error || exit 1
-    touch node_modules/.installed
-    # The package carries a binary for every platform. The box is linux on
-    # x86, so the other three are dead weight on a disk with room for them.
-    rm -rf node_modules/onnxruntime-node/bin/napi-v6/darwin \
-           node_modules/onnxruntime-node/bin/napi-v6/win32
-    # The cache is a third of the download and is no use afterwards.
-    npm cache clean --force >/dev/null 2>&1 || true
-    rm -rf /root/.npm/_cacache
+  if [ -d '$API_DIR/node_modules' ]; then
+    mkdir -p /root/.trash-removed
+    mv '$API_DIR/node_modules' /root/.trash-removed/voidtrackr-node_modules-\$(date +%s)
+    echo 'the old dependencies were moved to /root/.trash-removed/'
   fi
 "
 
@@ -302,7 +286,7 @@ for path in / /404.html /robots.txt /model/model.json /model-onnx/okarina_m.onnx
             /model-onnx/yourmt3/encoder.onnx \
             /model-onnx/piano/piano_kong.onnx \
             /ort/ort-wasm-simd-threaded.wasm \
-            /api/health /api/models /api/openapi.json; do
+            /api/health /api/models /api/parameters /api/openapi.json; do
   code="$("${SSH[@]}" "$USER@$HOST" \
     "curl -s -o /dev/null -w '%{http_code}' -H 'Host: ${HOST}' http://127.0.0.1$path")"
   printf '  %-58s %s\n' "$path" "$code"
@@ -310,15 +294,24 @@ done
 
 # The API is the one thing here that can be up and still be broken, so it
 # is asked to do the job rather than only to answer.
-say "Checking the API can convert"
+say "Checking the API describes the tool"
 "${SSH[@]}" "$USER@$HOST" \
-  "curl -fsS -m 600 -H 'Host: ${HOST}' -F file=@/opt/voidtrackr/api/test.wav \
-     http://127.0.0.1/api/convert -o /tmp/voidtrackr-smoke.mid && \
-   head -c 4 /tmp/voidtrackr-smoke.mid" > /tmp/voidtrackr-smoke.txt 2>&1 || {
-  echo "error: the API could not convert a file." >&2
-  cat /tmp/voidtrackr-smoke.txt >&2
+  "curl -fsS -m 30 -H 'Host: ${HOST}' http://127.0.0.1/api/models | head -c 20" > /tmp/voidtrackr-models.txt 2>&1 || {
+  echo "error: the API did not answer with the catalogue." >&2
+  cat /tmp/voidtrackr-models.txt >&2
   exit 1
 }
-echo "  it produced $(cat /tmp/voidtrackr-smoke.txt)"
+echo "  it answered with the catalogue"
+
+# The endpoint that took a recording must stay gone. This is the one that
+# would break the promise, so it is checked rather than assumed.
+gone="$(("${SSH[@]}" "$USER@$HOST" \
+  "curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Host: ${HOST}' \
+     -F file=@/opt/voidtrackr/api/test.wav http://127.0.0.1/api/convert") || true)"
+if [ "$gone" != "410" ]; then
+  echo "error: the API accepted a recording (${gone}). It must not." >&2
+  exit 1
+fi
+echo "  it still refuses a recording"
 
 say "Live at http://${HOST}/"

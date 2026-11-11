@@ -1,344 +1,55 @@
 /**
  * The HTTP API.
  *
- * Three things are checked here: that the multipart parser reads a body
- * correctly, that the parameters are read strictly, and that a request
- * through the server produces the same MIDI the command line produces.
+ * The API describes the tool; it does not run it. The property that matters
+ * most is therefore a negative one: there is no endpoint that takes a
+ * recording, and the server never reads a request body at all. That is what
+ * the tests below check, and what the rest of the tests then build on.
  *
- * The last one is the one that matters. The tool promises that the same
- * input gives the same file however it is asked for, and the API is a new
- * way of asking.
+ * The other half is that a client can get the model's weights from the
+ * server and convert a recording locally, which is the one-line path a
+ * script uses.
  */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { execFile } from 'node:child_process';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { createServer, request as httpRequest, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { installTfjsNodeBackend } from '../src/api/backend';
-import { fileFetch } from '../src/api/model-loader';
-import { boundaryOf, parseMultipart } from '../src/api/multipart';
-import { parseParameters } from '../src/api/params';
 import { createApiServer } from '../src/api/server';
+import { PARAMETERS } from '../src/core/parameters';
+import modelLock from '../src/core/model.lock.json';
+import okarinaLock from '../src/core/okarina.lock.json';
+import pianoLock from '../src/core/piano.lock.json';
 import { PIANO_DIR } from '../src/core/piano';
-import { DEFAULT_MODEL } from '../src/core/registry';
+import { DEFAULT_MODEL, MODELS } from '../src/core/registry';
+import tsumugiLock from '../src/core/tsumugi.lock.json';
 import { TSUMUGI_DIR } from '../src/core/tsumugi';
+import yourmt3Lock from '../src/core/yourmt3.lock.json';
 import { YOURMT3_DIR } from '../src/core/yourmt3';
+import { fetchWeights } from '../src/core/weights-fetch';
 
-/** Build a multipart body, the way a browser would send one. */
-function multipart(
-  parts: { name: string; value?: string; filename?: string; content?: Buffer }[],
-  boundary = '----voidtrackrTest',
-): { body: Buffer; contentType: string } {
-  const chunks: Buffer[] = [];
-
-  for (const part of parts) {
-    let header = `--${boundary}\r\nContent-Disposition: form-data; name="${part.name}"`;
-    if (part.filename !== undefined) header += `; filename="${part.filename}"`;
-    header += '\r\n';
-    if (part.filename !== undefined) header += 'Content-Type: application/octet-stream\r\n';
-    header += '\r\n';
-
-    chunks.push(Buffer.from(header, 'utf8'));
-    chunks.push(
-      part.content ?? Buffer.from(part.value ?? '', 'utf8'),
-    );
-    chunks.push(Buffer.from('\r\n', 'utf8'));
-  }
-
-  chunks.push(Buffer.from(`--${boundary}--\r\n`, 'utf8'));
-
-  return {
-    body: Buffer.concat(chunks),
-    contentType: `multipart/form-data; boundary=${boundary}`,
-  };
-}
-
-/**
- * The body of a request.
- *
- * TypeScript's `BodyInit` wants an `ArrayBufferView` over a plain
- * `ArrayBuffer`, and a Buffer is over an `ArrayBufferLike`, which may be
- * shared memory. A copy into a fresh Uint8Array settles it.
- */
-function asBody(buffer: Buffer): ArrayBuffer {
-  const copy = new ArrayBuffer(buffer.length);
-  new Uint8Array(copy).set(buffer);
-  return copy;
-}
-
-/** The model directory, for the server. */
-const MODEL_DIR = resolve('models', 'onnx');
-const MODEL_PATH = resolve('public', 'model', 'model.json');
-
-test('a file URL can be fetched off the disk', async () => {
-  // TensorFlow.js fetches the model's manifest and its shards itself, and
-  // Node's own fetch does not understand the file:// scheme. Without this,
-  // Basic Pitch cannot be loaded on a machine without the native backend.
-  const url = pathToFileURL(resolve('public', 'model', 'model.json')).href;
-  const response = await fileFetch(url);
-
-  assert.equal(response.status, 200);
-  const manifest = JSON.parse(await response.text()) as { modelTopology?: unknown };
-  assert.ok(manifest.modelTopology);
-});
-
-test('the boundary comes out of the content type', () => {
-  assert.equal(boundaryOf('multipart/form-data; boundary=abc'), 'abc');
-  assert.equal(boundaryOf('multipart/form-data; boundary="a b c"'), 'a b c');
-  assert.equal(boundaryOf('multipart/form-data'), null);
-  assert.equal(boundaryOf(undefined), null);
-});
-
-test('a multipart body is read into its parts', () => {
-  const { body, contentType } = multipart([
-    { name: 'model', value: 'piano' },
-    { name: 'file', filename: 'song.wav', content: Buffer.from([0, 1, 2, 3, 255]) },
-  ]);
-
-  const parts = parseMultipart(body, contentType);
-
-  assert.equal(parts.length, 2);
-  assert.equal(parts[0].name, 'model');
-  assert.equal(parts[0].content.toString('utf8'), 'piano');
-  assert.equal(parts[1].name, 'file');
-  assert.equal(parts[1].filename, 'song.wav');
-  assert.deepEqual([...parts[1].content], [0, 1, 2, 3, 255]);
-});
-
-test('a multipart body keeps its bytes intact', () => {
-  // The bytes a WAV file is made of include the boundary-shaped sequence
-  // only by accident, but a file part can be anything at all, so the
-  // content has to survive whatever is in it.
-  const content = Buffer.from(
-    'RIFF----nottheboundary----WAVEfmt ',
-    'utf8',
-  );
-  const { body, contentType } = multipart([
-    { name: 'file', filename: 'a.wav', content },
-  ]);
-
-  const parts = parseMultipart(body, contentType);
-
-  assert.equal(parts.length, 1);
-  assert.equal(parts[0].content.toString('utf8'), content.toString('utf8'));
-});
-
-test('a body with no boundary is refused', () => {
-  assert.throws(() => parseMultipart(Buffer.from('x'), 'text/plain'), /no boundary/);
-});
-
-test('the parameters have sensible defaults', () => {
-  const parameters = parseParameters({});
-
-  assert.equal(parameters.model, DEFAULT_MODEL);
-  assert.equal(parameters.detectDrums, true);
-  assert.equal(parameters.format, 'midi');
-  assert.equal(parameters.range, undefined);
-  assert.equal(parameters.quantise, undefined);
-  assert.equal(parameters.pianify, undefined);
-  assert.equal(parameters.forceTempo, undefined);
-});
-
-test('the parameters are read', () => {
-  const parameters = parseParameters({
-    model: 'okarina',
-    okarinaSize: 'l',
-    drums: 'false',
-    tempo: '120',
-    rangeLow: '100',
-    rangeHigh: '1200',
-    grid: '30',
-    gridPhase: '12',
-    pianify: 'true',
-  });
-
-  assert.equal(parameters.model, 'okarina');
-  assert.equal(parameters.okarinaSize, 'l');
-  assert.equal(parameters.detectDrums, false);
-  assert.equal(parameters.forceTempo, 120);
-  assert.equal(parameters.range?.low, 100);
-  assert.equal(parameters.range?.high, 1200);
-  assert.equal(parameters.quantise?.grid, 30);
-  assert.equal(parameters.quantise?.phase, 0.012);
-  assert.deepEqual(parameters.pianify, {});
-});
-
-test('a parameter that does not make sense is refused', () => {
-  assert.throws(() => parseParameters({ model: 'nonsense' }), /not a model/);
-  assert.throws(() => parseParameters({ grid: 'abc' }), /must be a number/);
-  assert.throws(() => parseParameters({ drums: 'maybe' }), /true or false/);
-  assert.throws(() => parseParameters({ tempo: '5' }), /between 20 and 400/);
-  assert.throws(
-    () => parseParameters({ rangeLow: '900', rangeHigh: '400' }),
-    /must be below/,
-  );
-  assert.throws(() => parseParameters({ format: 'xml' }), /midi or json/);
-  assert.throws(() => parseParameters({ gridPhase: '10' }), /needs a "grid"/);
-});
-
-/** Start the API on a port the operating system picks. */
-async function startServer() {
-  await installTfjsNodeBackend();
-  const server = createApiServer({
-    port: 0,
-    host: '127.0.0.1',
-    modelDir: MODEL_DIR,
-    modelPath: MODEL_PATH,
-    maxUploadBytes: 32 * 1024 * 1024,
-    concurrency: 1,
-  });
-
+/** Start the API on a free port. */
+async function startServer(): Promise<{ url: string; server: Server; close: () => void }> {
+  const server = createApiServer();
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
-  const { port } = server.address() as AddressInfo;
+  const address = server.address() as AddressInfo;
 
   return {
-    url: `http://127.0.0.1:${port}`,
-    close: () => new Promise<void>((done) => server.close(() => done())),
+    url: `http://127.0.0.1:${address.port}`,
+    server,
+    // `fetch` keeps its connections alive in a pool, and `close()` waits
+    // for them. The idle ones are closed first, so it does not.
+    close: () => {
+      server.closeIdleConnections();
+      server.close();
+    },
   };
 }
-
-test('a request through the API gives the MIDI, and says what it made', async (t) => {
-  const api = await startServer();
-  t.after(() => api.close());
-
-  const { body, contentType } = multipart([
-    { name: 'model', value: 'basic-pitch' },
-    { name: 'file', filename: 'sample.wav', content: readFileSync('test/sample.wav') },
-  ]);
-
-  const response = await fetch(`${api.url}/api/convert`, {
-    method: 'POST',
-    headers: { 'Content-Type': contentType },
-    body: asBody(body),
-  });
-
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('content-type'), 'audio/midi');
-  assert.equal(response.headers.get('x-voidtrackr-model'), 'basic-pitch');
-  assert.ok(Number(response.headers.get('x-voidtrackr-notes')) > 0);
-  assert.match(response.headers.get('x-voidtrackr-sha256') ?? '', /^[0-9a-f]{64}$/);
-
-  const midi = Buffer.from(await response.arrayBuffer());
-  assert.equal(midi.subarray(0, 4).toString('ascii'), 'MThd');
-});
-
-test('the API can answer with the notes instead of the file', async (t) => {
-  const api = await startServer();
-  t.after(() => api.close());
-
-  const { body, contentType } = multipart([
-    { name: 'model', value: 'basic-pitch' },
-    { name: 'format', value: 'json' },
-    { name: 'file', filename: 'sample.wav', content: readFileSync('test/sample.wav') },
-  ]);
-
-  const response = await fetch(`${api.url}/api/convert`, {
-    method: 'POST',
-    headers: { 'Content-Type': contentType },
-    body: asBody(body),
-  });
-
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type') ?? '', /application\/json/);
-
-  const json = (await response.json()) as {
-    model: string;
-    pipeline: string;
-    tracks: { notes: { pitch: number; startTime: number }[] }[];
-  };
-
-  assert.equal(json.model, 'basic-pitch');
-  assert.match(json.pipeline, /^\d+\.\d+\.\d+$/);
-  assert.ok(json.tracks.length > 0);
-  assert.ok(json.tracks[0].notes.length > 0);
-  assert.equal(typeof json.tracks[0].notes[0].pitch, 'number');
-});
-
-test('the fields are read even when they come after the file', async (t) => {
-  const api = await startServer();
-  t.after(() => api.close());
-
-  // curl sends the parts in the order they were given, so
-  // `-F file=@song.wav -F model=piano` puts the file first.
-  const { body, contentType } = multipart([
-    { name: 'file', filename: 'sample.wav', content: readFileSync('test/sample.wav') },
-    { name: 'model', value: 'basic-pitch' },
-  ]);
-
-  const response = await fetch(`${api.url}/api/convert`, {
-    method: 'POST',
-    headers: { 'Content-Type': contentType },
-    body: asBody(body),
-  });
-
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('x-voidtrackr-model'), 'basic-pitch');
-});
-
-test('a request with no file is refused', async (t) => {
-  const api = await startServer();
-  t.after(() => api.close());
-
-  const { body, contentType } = multipart([{ name: 'model', value: 'piano' }]);
-
-  const response = await fetch(`${api.url}/api/convert`, {
-    method: 'POST',
-    headers: { 'Content-Type': contentType },
-    body: asBody(body),
-  });
-
-  assert.equal(response.status, 400);
-  const json = (await response.json()) as { error: { code: string; message: string } };
-  assert.equal(json.error.code, 'bad_request');
-  assert.match(json.error.message, /No audio/);
-});
-
-test('a parameter that does not make sense is refused with a code', async (t) => {
-  const api = await startServer();
-  t.after(() => api.close());
-
-  const { body, contentType } = multipart([
-    { name: 'grid', value: 'abc' },
-    { name: 'file', filename: 'sample.wav', content: readFileSync('test/sample.wav') },
-  ]);
-
-  const response = await fetch(`${api.url}/api/convert`, {
-    method: 'POST',
-    headers: { 'Content-Type': contentType },
-    body: asBody(body),
-  });
-
-  assert.equal(response.status, 400);
-  const json = (await response.json()) as { error: { code: string; details: unknown } };
-  assert.equal(json.error.code, 'bad_request');
-  assert.deepEqual(json.error.details, { parameter: 'grid', value: 'abc' });
-});
-
-test('the wrong method is refused, and says what is allowed', async (t) => {
-  const api = await startServer();
-  t.after(() => api.close());
-
-  const response = await fetch(`${api.url}/api/convert`, { method: 'GET' });
-
-  assert.equal(response.status, 405);
-  const json = (await response.json()) as { error: { code: string; details: { allowed: string[] } } };
-  assert.equal(json.error.code, 'method_not_allowed');
-  assert.deepEqual(json.error.details.allowed, ['POST']);
-});
-
-test('an address that does not exist is refused', async (t) => {
-  const api = await startServer();
-  t.after(() => api.close());
-
-  const response = await fetch(`${api.url}/api/nonsense`);
-
-  assert.equal(response.status, 404);
-  const json = (await response.json()) as { error: { code: string } };
-  assert.equal(json.error.code, 'not_found');
-});
 
 test('the API says what it is', async (t) => {
   const api = await startServer();
@@ -346,9 +57,14 @@ test('the API says what it is', async (t) => {
 
   const index = await fetch(`${api.url}/api/`);
   assert.equal(index.status, 200);
-  const json = (await index.json()) as { name: string; endpoints: unknown[] };
+  const json = (await index.json()) as {
+    name: string;
+    endpoints: { path: string }[];
+    acceptsRecordings: boolean;
+  };
   assert.equal(json.name, 'voidtrackr');
   assert.ok(json.endpoints.length > 0);
+  assert.equal(json.acceptsRecordings, false);
 
   const health = await fetch(`${api.url}/api/health`);
   assert.equal(health.status, 200);
@@ -362,19 +78,45 @@ test('the API says what it is', async (t) => {
   assert.ok(catalogue.models.every((model) => model.license.length > 0));
 
   const spec = await fetch(`${api.url}/api/openapi.json`);
-  const document = (await spec.json()) as { openapi: string; paths: Record<string, unknown> };
+  const document = (await spec.json()) as {
+    openapi: string;
+    paths: Record<string, unknown>;
+    info: { description: string };
+  };
   assert.match(document.openapi, /^3\./);
-  assert.ok('/convert' in document.paths);
+  assert.ok('/models' in document.paths);
+  assert.ok('/parameters' in document.paths);
+  assert.match(document.info.description, /never reads a request body/);
 });
 
-test('the API says where each model\'s weights really are', async (t) => {
+test('the API publishes the parameters a conversion takes', async (t) => {
+  const api = await startServer();
+  t.after(() => api.close());
+
+  const response = await fetch(`${api.url}/api/parameters`);
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    parameters: { name: string; flag: string; default: unknown }[];
+  };
+
+  const names = body.parameters.map((parameter) => parameter.name);
+  assert.deepEqual(names, PARAMETERS.map((parameter) => parameter.name));
+
+  // The names are the ones the command line takes, so a script that reads
+  // this and builds a command line cannot get it wrong.
+  for (const parameter of body.parameters) {
+    assert.ok(parameter.flag.startsWith('--'), `${parameter.name} has no flag`);
+  }
+});
+
+test('the catalogue says where each model\'s weights really are', async (t) => {
   const api = await startServer();
   t.after(() => api.close());
 
   const response = await fetch(`${api.url}/api/models`);
   assert.equal(response.status, 200);
   const catalogue = (await response.json()) as {
-    models: { id: string; weightsUrl: string }[];
+    models: { id: string; weightsUrl: string; weightsRoot: string }[];
   };
 
   const paths = new Map(catalogue.models.map((model) => [model.id, model.weightsUrl]));
@@ -401,6 +143,94 @@ test('the API says where each model\'s weights really are', async (t) => {
   }
 });
 
+test('the API does not take a recording', async (t) => {
+  const api = await startServer();
+  t.after(() => api.close());
+
+  // The endpoint that used to take an upload is gone, and says so.
+  const response = await fetch(`${api.url}/api/convert`, {
+    method: 'POST',
+    body: new Uint8Array(1024),
+  });
+
+  assert.equal(response.status, 410);
+  const body = (await response.json()) as { error: { code: string; message: string } };
+  assert.equal(body.error.code, 'gone');
+  assert.match(body.error.message, /never leaves the machine/);
+
+  // No other address takes one either.
+  for (const path of ['/api/', '/api/health', '/api/models', '/api/parameters']) {
+    const posted = await fetch(`${api.url}${path}`, {
+      method: 'POST',
+      body: new Uint8Array(1024),
+    });
+    assert.equal(posted.status, 405, `${path} answered a POST`);
+  }
+});
+
+test('the server never reads the body', async (t) => {
+  const api = await startServer();
+  t.after(() => api.close());
+
+  // A request whose body never ends. A server that read the body would
+  // wait for it; this one answers without looking.
+  const answer = await new Promise<{ status: number; body: string }>((done, failed) => {
+    const client = httpRequest(
+      {
+        host: '127.0.0.1',
+        port: new URL(api.url).port,
+        path: '/api/convert',
+        method: 'POST',
+        headers: { 'Content-Length': String(1024 * 1024) },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          // The request was never finished, so the socket is closed here.
+          client.destroy();
+          done({ status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString() });
+        });
+      },
+    );
+
+    client.on('error', failed);
+    client.write(Buffer.alloc(16));
+
+    // If the answer has not come by now, the server is waiting for the
+    // body — which is exactly what must not happen.
+    setTimeout(() => {
+      client.destroy();
+      failed(new Error('the server waited for the body'));
+    }, 5000);
+  });
+
+  assert.equal(answer.status, 410);
+  assert.match(answer.body, /gone/);
+});
+
+test('an address that does not exist is refused', async (t) => {
+  const api = await startServer();
+  t.after(() => api.close());
+
+  const response = await fetch(`${api.url}/api/nope`);
+  assert.equal(response.status, 404);
+  const body = (await response.json()) as { error: { code: string; message: string } };
+  assert.equal(body.error.code, 'not_found');
+  assert.ok(body.error.message.length > 0);
+});
+
+test('the wrong method is refused, and says what is allowed', async (t) => {
+  const api = await startServer();
+  t.after(() => api.close());
+
+  const response = await fetch(`${api.url}/api/models`, { method: 'DELETE' });
+  assert.equal(response.status, 405);
+  const body = (await response.json()) as { error: { code: string; details: { allowed: string[] } } };
+  assert.equal(body.error.code, 'method_not_allowed');
+  assert.deepEqual(body.error.details.allowed, ['GET', 'HEAD']);
+});
+
 test('the API answers a browser with a page', async (t) => {
   const api = await startServer();
   t.after(() => api.close());
@@ -411,5 +241,203 @@ test('the API answers a browser with a page', async (t) => {
 
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type') ?? '', /text\/html/);
-  assert.match(await response.text(), /voidtrackr/);
+  const page = await response.text();
+  assert.match(page, /voidtrackr/);
+  assert.match(page, /No endpoint here takes a recording/);
 });
+
+/**
+ * A server that behaves like the site: it serves the catalogue and the
+ * model's weights, and it records every request it is asked for.
+ */
+async function startWeightsServer(): Promise<{
+  url: string;
+  asked: string[];
+  close: () => void;
+}> {
+  const asked: string[] = [];
+
+  const server = createServer((request, response) => {
+    const path = new URL(request.url ?? '/', 'http://localhost').pathname;
+    asked.push(path);
+
+    if (path === '/api/models') {
+      const body = JSON.stringify({
+        default: DEFAULT_MODEL,
+        models: Object.values(MODELS).map((model) => ({
+          id: model.id,
+          weightsPath: model.weightsPath,
+          weightsRoot: model.weightsRoot,
+        })),
+      });
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(body);
+      return;
+    }
+
+    // The weights themselves, read off this machine. Basic Pitch is the
+    // small one and its files are not in the ONNX tree, so it is the one
+    // this server serves.
+    const name = path.startsWith('/model/') ? path.slice('/model/'.length) : '';
+    if (name) {
+      readFile(join(process.cwd(), 'public', 'model', name)).then(
+        (bytes) => {
+          response.writeHead(200, { 'Content-Length': bytes.length });
+          response.end(bytes);
+        },
+        () => {
+          response.writeHead(404);
+          response.end();
+        },
+      );
+      return;
+    }
+
+    response.writeHead(404);
+    response.end();
+  });
+
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const address = server.address() as AddressInfo;
+
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    asked,
+    close: () => {
+      server.closeIdleConnections();
+      server.close();
+    },
+  };
+}
+
+test('the weight files hang off the root the catalogue names', async (t) => {
+  const api = await startServer();
+  t.after(() => api.close());
+
+  const response = await fetch(`${api.url}/api/models`);
+  const catalogue = (await response.json()) as {
+    models: { id: string; weightsRoot: string }[];
+  };
+
+  // The lock file names the files; the catalogue says what to put in front
+  // of them. Together they are the address of every weight file.
+  const locks: Record<string, { files: Record<string, unknown> }> = {
+    'basic-pitch': modelLock,
+    tsumugi: tsumugiLock,
+    yourmt3: yourmt3Lock,
+    piano: pianoLock,
+    okarina: okarinaLock,
+  };
+
+  for (const model of catalogue.models) {
+    const root = model.weightsRoot;
+    for (const name of Object.keys(locks[model.id].files)) {
+      const address = `${root}${name}`;
+      assert.ok(address.startsWith('/model'), `${model.id}: ${address}`);
+    }
+  }
+
+  // The two layouts that differ, spelled out.
+  const roots = new Map(catalogue.models.map((m) => [m.id, m.weightsRoot]));
+  assert.equal(roots.get('piano'), '/model-onnx/');
+  assert.equal(`${roots.get('piano')}${'piano/piano_kong.onnx'}`, '/model-onnx/piano/piano_kong.onnx');
+  assert.equal(`${roots.get('basic-pitch')}${'model.json'}`, '/model/model.json');
+  assert.equal(`${roots.get('okarina')}${'cqt156.onnx'}`, '/model-onnx/cqt156.onnx');
+});
+
+test('a client can take the model from the server', async (t) => {
+  const server = await startWeightsServer();
+  t.after(() => server.close());
+
+  const cache = await mkdtemp(join(tmpdir(), 'voidtrackr-weights-'));
+  const fetched = await fetchWeights({ base: server.url }, 'basic-pitch', cache);
+
+  assert.ok(fetched.bytes > 0, 'nothing was downloaded');
+  assert.equal(fetched.cached, 0);
+
+  // The files landed where the loader looks for them.
+  const manifest = await readFile(fetched.modelPath);
+  assert.ok(manifest.length > 0);
+
+  // And only the weights were asked for. A recording is never part of this.
+  assert.ok(server.asked.every((path) => !path.endsWith('.wav')));
+  assert.ok(server.asked.includes('/api/models'));
+  assert.ok(server.asked.includes('/model/model.json'));
+
+  // The second time, the files are already there and nothing is downloaded.
+  const again = await fetchWeights({ base: server.url }, 'basic-pitch', cache);
+  assert.equal(again.bytes, 0);
+  assert.ok(again.cached > 0);
+});
+
+test('a client can take the weights and convert, without sending anything', async (t) => {
+  const server = await startWeightsServer();
+  t.after(() => server.close());
+
+  const cache = await mkdtemp(join(tmpdir(), 'voidtrackr-weights-'));
+  await fetchWeights({ base: server.url }, 'basic-pitch', cache);
+
+  // The weights came over the wire; the recording did not. The server was
+  // asked for the catalogue and the weights, and for nothing else.
+  assert.deepEqual(
+    server.asked.filter((path) => !path.startsWith('/model/')),
+    ['/api/models'],
+  );
+});
+
+test('the command line takes the model from the server and sends no recording', async (t) => {
+  const server = await startWeightsServer();
+  t.after(() => server.close());
+
+  const localOut = await mkdtemp(join(tmpdir(), 'voidtrackr-out-'));
+  const remoteOut = await mkdtemp(join(tmpdir(), 'voidtrackr-out-'));
+  const cache = await mkdtemp(join(tmpdir(), 'voidtrackr-cache-'));
+
+  // The command line is a program, not a library, so it is run as one.
+  const run = (extra: string[], output: string) =>
+    new Promise<{ code: number; stdout: string; stderr: string }>((done) => {
+      execFile(
+        join(process.cwd(), 'node_modules', '.bin', 'tsx'),
+        [
+          join(process.cwd(), 'src', 'cli', 'convert.ts'),
+          ...extra,
+          'test/sample.wav',
+          '-o',
+          output,
+          '--model',
+          'basic-pitch',
+          '--quiet',
+        ],
+        { env: { ...process.env, VOIDTRACKR_CACHE: cache } },
+        (error, stdout, stderr) => {
+          done({
+            code: error && typeof error.code === 'number' ? error.code : 0,
+            stdout,
+            stderr,
+          });
+        },
+      );
+    });
+
+  // The same command with and without the server. The file it produces
+  // must be the same either way: taking the model from the server is not
+  // allowed to change the answer.
+  const local = await run([], localOut);
+  assert.equal(local.code, 0, local.stderr);
+
+  const remote = await run(['--server', server.url], remoteOut);
+  assert.equal(remote.code, 0, remote.stderr);
+
+  const localBytes = await readFile(join(localOut, 'sample.mid'));
+  const remoteBytes = await readFile(join(remoteOut, 'sample.mid'));
+  assert.deepEqual(remoteBytes, localBytes);
+
+  // The server was asked for the catalogue and the weights. It was never
+  // asked for the recording, because the recording never went to it.
+  assert.deepEqual(
+    server.asked.filter((path) => !path.startsWith('/model/')),
+    ['/api/models'],
+  );
+  assert.ok(server.asked.every((path) => !path.endsWith('.wav')));
+});
+

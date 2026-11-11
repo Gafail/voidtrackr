@@ -1,52 +1,59 @@
 # The API
 
-Written on 12 November 2026.
-
-**The short version: the site has an address you can call.** The browser
-does the work and nothing is uploaded, but a tool that is driven from a
-script needs somewhere to send a file. So the box runs a small service
-alongside the site, at the same origin, and it answers at `/api/`.
-
-```bash
-curl -F file=@song.wav http://192.168.100.109/api/convert -o song.mid
-```
-
-That is the whole thing: one line, and the MIDI file comes back.
-
----
+> A recording in, a MIDI file out. Nothing is uploaded.
 
 ## 1. What it is, and what it is not
 
-The site is still static and the browser still does the work when you use
-it. The API is a **second way in**, for scripts, and it is the only part of
-the tool where an audio file leaves the browser.
+The API is the address of the tool: a small service on the same box as the
+site that says what the tool can do. It lists the models and the licences
+they carry, the parameters a conversion takes and their defaults, and where
+each model's weights are served from.
 
-That is worth being plain about, because the site's promise is "the audio
-never leaves the machine it is on":
+**It does not take a recording.** There is no endpoint that accepts one,
+the server never reads a request body, and there is no code path that could.
+An upload endpoint was built and then removed: it was the one thing in the
+project that broke the promise, and the promise is the point.
 
-- **In the browser**, the audio is decoded and transcribed on the machine
-  you opened the site on. It is never sent anywhere. This has not changed.
-- **Through the API**, the audio is sent to the box at
-  `192.168.100.109`, and the box does the work. The box is on your own
-  network, and it is the same machine that serves the site, so the audio
-  does not leave the house — but it does leave the browser.
+So the recording never leaves the machine it is on. It is converted there —
+in the browser, or on the command line — and the only thing that travels
+over the network is the model's own weights, which are the tool's, not
+yours.
 
-The API is opt-in. Nothing in the site calls it.
+### What a script does instead
+
+```bash
+# The one line. The recording is read from disk and stays there.
+npm run cli -- song.wav -o .
+
+# With the site's model, fetched over HTTP and checked against its hash.
+npm run cli -- --server http://192.168.100.109 song.wav -o .
+```
+
+The second one calls the site for the catalogue, downloads the model's
+weights, checks each file against the pinned SHA-256, and converts. The
+recording is not involved in any of that.
 
 ## 2. The endpoints
 
-| method | path | what it does |
+| | | |
 |---|---|---|
-| `GET` | `/api/` | an index of the endpoints, or a page about them |
-| `GET` | `/api/health` | whether the server is up, and what it has been doing |
-| `GET` | `/api/models` | the models, their licences, and where their weights are |
+| `GET` | `/api/` | the index, or a page about the API |
+| `GET` | `/api/health` | whether the server is up |
+| `GET` | `/api/models` | the models, their licences and their weights |
+| `GET` | `/api/parameters` | the parameters a conversion takes |
 | `GET` | `/api/openapi.json` | the OpenAPI 3.1 document |
-| `POST` | `/api/convert` | convert an audio file to MIDI |
+
+All of them are `GET`. There is nothing that writes, and nothing that
+takes a file.
 
 ### `GET /api/`
 
-Answers with JSON, or with a page about the API if the caller asks for
-HTML. The page has the one-liners and the parameter table on it.
+The index. It answers with JSON, or with a page when the caller asks for
+HTML with `Accept: text/html`.
+
+```bash
+curl http://192.168.100.109/api/
+```
 
 ### `GET /api/health`
 
@@ -54,22 +61,11 @@ HTML. The page has the one-liners and the parameter table on it.
 {
   "status": "ok",
   "pipeline": "0.8.0",
-  "threads": 4,
   "defaultModel": "piano",
   "models": ["basic-pitch", "tsumugi", "yourmt3", "piano", "okarina"],
-  "conversions": 12,
-  "failures": 0,
-  "inFlight": 0,
-  "concurrency": 1,
-  "uptimeSeconds": 4210,
-  "nativeBackend": false
+  "uptimeSeconds": 3011
 }
 ```
-
-`nativeBackend` says whether the fast TensorFlow.js backend is installed.
-It is not, on the box: the native module is large and the box has a
-gigabyte of memory, so Basic Pitch runs on the pure-JavaScript backend
-there. The other four models do not use TensorFlow.js at all.
 
 ### `GET /api/models`
 
@@ -77,262 +73,139 @@ The catalogue, with the licence on each entry. The licence decides whether
 the output can be sold, so it is stated rather than buried.
 
 Each entry also carries `weightsUrl`, the path the site serves that model's
-weights from. It is worth reading rather than guessing, because the paths
-are not all the same shape:
+weights from, and `weightsRoot`, the directory the lock file's file names
+are relative to. They are worth reading rather than guessing, because the
+paths are not all the same shape:
 
-| model | `weightsUrl` |
-|---|---|
-| `basic-pitch` | `/model/` — a TensorFlow.js model, not an ONNX one |
-| `okarina` | `/model-onnx/` — its files sit at the root of the tree |
-| `piano` | `/model-onnx/piano/` |
-| `tsumugi` | `/model-onnx/tsumugi/` |
-| `yourmt3` | `/model-onnx/yourmt3/` |
-
-### `POST /api/convert`
-
-The one that does the work. See below.
-
-## 3. Converting a file
-
-### The request
-
-The audio goes in a multipart part called `file`. The values go in the
-query string or as fields of the same body, whichever is easier:
-
-```bash
-# The smallest useful request.
-curl -F file=@song.wav http://192.168.100.109/api/convert -o song.mid
-
-# With values, as fields.
-curl -F file=@song.wav -F model=piano -F pianify=true -F grid=30 \
-     http://192.168.100.109/api/convert -o song.mid
-
-# With values, in the query string.
-curl -F file=@song.wav "http://192.168.100.109/api/convert?model=okarina&format=json"
-```
-
-The body may also be the audio itself, with an audio content type:
-
-```bash
-curl --data-binary @song.wav -H 'Content-Type: audio/wav' \
-     http://192.168.100.109/api/convert -o song.mid
-```
-
-The fields may come before or after the file. `curl` sends the parts in the
-order they were given, so `-F file=@song.wav -F model=piano` puts the file
-first, and that is read correctly.
-
-### The parameters
-
-| name | default | what it does |
+| model | `weightsUrl` | `weightsRoot` |
 |---|---|---|
-| `file` | — | the audio. Required. |
-| `model` | `piano` | `basic-pitch`, `tsumugi`, `yourmt3`, `piano` or `okarina` |
-| `okarinaSize` | `m` | `s`, `m` or `l`. Only for Okarina. |
-| `drums` | `true` | look for a drum kit |
-| `tempo` | estimated | force a tempo, in beats per minute |
-| `rangeLow` | `0` | lowest frequency to keep, in hertz |
-| `rangeHigh` | — | highest frequency to keep, in hertz |
-| `grid` | `0` | slots per second. Zero leaves the notes alone. |
-| `gridPhase` | `0` | where the first slot sits, in milliseconds |
-| `pianify` | `false` | arrange the notes for two hands |
-| `format` | `midi` | `midi` or `json` |
+| `basic-pitch` | `/model/` — a TensorFlow.js model, not an ONNX one | `/model/` |
+| `okarina` | `/model-onnx/` — its files sit at the root of the tree | `/model-onnx/` |
+| `piano` | `/model-onnx/piano/` | `/model-onnx/` |
+| `tsumugi` | `/model-onnx/tsumugi/` | `/model-onnx/` |
+| `yourmt3` | `/model-onnx/yourmt3/` | `/model-onnx/` |
 
-These are the same controls the site has, with the same names and the same
-meanings, so a value set in the browser means the same thing here.
+The address of a weight file is `weightsRoot` and the file's name in the
+lock file, joined. The piano model's graph is `piano/piano_kong.onnx` in
+`piano.lock.json`, and its address is `/model-onnx/piano/piano_kong.onnx`.
 
-A parameter that is present but wrong is an error rather than a shrug.
-`grid=abc` gets a 400 that says so; it does not get a file that quietly
-ignored it.
+### `GET /api/parameters`
 
-### The reply
+The parameters a conversion takes, with their defaults and the command line
+flag that sets each one. The names are the ones the site uses, so a value
+set in one means the same thing in the others.
 
-`format=midi` — the default — sends the MIDI file:
-
-```
-Content-Type: audio/midi
-Content-Disposition: attachment; filename="song.mid"
-X-Voidtrackr-Pipeline: 0.8.0
-X-Voidtrackr-Model: piano
-X-Voidtrackr-Notes: 546
-X-Voidtrackr-Tempo: 104.10
-X-Voidtrackr-Key: Db major
-X-Voidtrackr-SHA256: 8bad2f2d5439c4a1…
+```bash
+curl http://192.168.100.109/api/parameters
 ```
 
-`format=json` sends the notes instead, for a caller that wants to work with
-them rather than play them:
+## 3. The parameters
 
-```json
-{
-  "model": "piano",
-  "pipeline": "0.8.0",
-  "provenance": "voidtrackr 0.8.0 | model piano-transcription-kong-2020 | sha256:27c96172…",
-  "duration": 24.0,
-  "tempo": { "bpm": 104.1, "confidence": 0.8, "adjusted": false },
-  "key": { "tonic": 1, "mode": "major", "name": "Db major" },
-  "stats": { "modelNotes": 608, "finalNotes": 546, "drumHits": 72, "drumsDetected": true },
-  "log": ["Piano transcription found 474 notes.", "Detected 72 drum hits."],
-  "tracks": [
-    {
-      "id": "piano",
-      "name": "Piano",
-      "kind": "melody",
-      "notes": [{ "pitch": 60, "startTime": 0.0, "duration": 0.42, "amplitude": 0.8 }]
-    }
-  ],
-  "midi": { "bytes": 4630, "sha256": "8bad2f2d…" }
-}
-```
+| Name | Flag | Default | What it does |
+|---|---|---|---|
+| `model` | `--model` | `piano` | Which model does the work. |
+| `okarinaSize` | `--okarina-size` | `m` | Which Okarina model. Only for Okarina. |
+| `drums` | `--no-drums` | `true` | Look for a drum kit. |
+| `tempo` | `--tempo` | estimated | Force a tempo, in BPM. |
+| `rangeLow` | `--range-low` | `0` | Lowest frequency to keep, in Hz. |
+| `rangeHigh` | `--range-high` | no limit | Highest frequency to keep, in Hz. |
+| `grid` | `--grid` | `0` | Slots per second. 0 leaves the notes alone. |
+| `gridPhase` | `--grid-phase` | `0` | Where the first slot sits, in ms. |
+| `pianify` | `--pianify` | `false` | Arrange the notes for two hands. |
+| `format` | `--json` | `midi` | midi or json. |
 
 ## 4. Errors
 
-Every failure comes back as the same shape, with a code a program can
-branch on and a status code that matches what went wrong:
+Every error comes back as the same JSON shape, with a machine-readable code
+and an HTTP status that matches what went wrong. A client should be able
+to branch on the code without reading the message.
 
 ```json
 {
   "error": {
-    "code": "bad_request",
-    "message": "\"grid\" must be a number, not \"abc\".",
-    "details": { "parameter": "grid", "value": "abc" }
+    "code": "gone",
+    "message": "This server does not take recordings. ..."
   }
 }
 ```
 
-| code | status | when |
+| Code | Status | What it means |
 |---|---|---|
-| `bad_request` | 400 | a parameter is wrong, or the file is missing |
-| `unauthorized` | 401 | a token is set and the one given is wrong |
-| `not_found` | 404 | there is nothing at that address |
-| `method_not_allowed` | 405 | that method is not allowed there |
-| `payload_too_large` | 413 | the upload is over the limit |
-| `unsupported_media_type` | 415 | the body is neither multipart nor audio |
-| `unprocessable_entity` | 422 | the audio could not be read |
-| `busy` | 503 | the server is already converting as much as it can |
-| `model_unavailable` | 503 | that model is not installed here |
-| `internal_error` | 500 | something went wrong that the caller cannot fix |
+| `not_found` | 404 | Nothing at that address. |
+| `method_not_allowed` | 405 | That address exists, but not for that method. |
+| `gone` | 410 | The endpoint that took recordings is gone. |
+| `internal_error` | 500 | Something went wrong that the caller cannot fix. |
 
-## 5. The limits, and why they are there
+`POST /api/convert` answers `410`, not `404`. The endpoint used to be
+there, and somebody with an old script deserves to be told what happened
+rather than a bare "nothing here".
 
-The box has two cores and a gigabyte of memory.
+## 5. What it runs on, and what it needs
 
-- **One conversion at a time.** A second request while one is running gets
-  a 503 rather than a queue, because two models in memory on a
-  gigabyte-sized box is how the box falls over. `VOIDTRACKR_CONCURRENCY`
-  raises it.
-- **A hundred megabytes per upload.** `VOIDTRACKR_MAX_UPLOAD`, in
-  megabytes. nginx has to be told the same number, or it refuses the
-  upload before the API sees it.
-- **A token, off by default.** `VOIDTRACKR_API_TOKEN` turns it on, and then
-  callers have to send `Authorization: Bearer <token>`. It is off because
-  the box is on a private network and the site itself is open; it is there
-  for anyone who wants it.
+The API has **no dependencies**. It is bundled into one file, the box
+installs nothing, and the service asks for 256 MB of memory it will never
+use.
 
-### How much memory each model needs
+That is a consequence of the rule above. The server used to convert, which
+meant it needed the ONNX runtime, TensorFlow.js and an audio decoder on
+the box, and it meant the box's memory decided which models it could serve:
 
-Measured on 12 November 2026, one model per process, on the piano model's
-worst case for the recording length. The peak is the kernel's own
-high-water mark.
+| model | Peak memory, one model per process |
+|---|---|
+| Okarina | 460 MB |
+| Piano Transcription | 661 MB |
+| YourMT3+ | 1056 MB |
+| Tsumugi | 1183 MB |
 
-| model | weights | settled | peak | on this box |
-|---|---|---|---|---|
-| Okarina (m) | 70 MB | 272 MB | **460 MB** | yes |
-| piano | 218 MB | 469 MB | **661 MB** | yes, with the arena off |
-| YourMT3+ | 671 MB | 713 MB | 1056 MB | **no** |
-| Tsumugi | 119 MB | 1039 MB | 1183 MB | **no** |
+On a container with a gigabyte, Tsumugi and YourMT3+ did not fit and the
+API could not serve them at all. Now that the box only holds files, every
+model is available to every client, and the box's memory does not enter
+into it.
 
-Tsumugi and YourMT3+ need more than the box has. A request for one of them
-will fail rather than produce a file, and giving the box more memory is the
-only way to serve them.
-
-### The memory arena
-
-The runtime keeps a pool of allocations for the next run. It is faster, and
-it holds on to far more memory than it needs: with the arena **on**, the
-piano model peaked at **1.15 GB** and the conversion was killed by the
-kernel's out-of-memory killer on a box with a gigabyte. With the arena
-**off**, the same conversion peaks at **661 MB**, the notes are
-**byte-identical**, and it is about 5 % slower — 9.4 seconds against 8.9 on
-a twelve-core machine.
-
-So the arena is off. `DETERMINISTIC_SESSION_OPTIONS` in `src/core/onnx.ts`
-turns it off for both runtimes, and the comment there says why.
-
-### The native TensorFlow.js backend
-
-The box does not have it. It is a large native binary and the box does not
-have the memory for it, so Basic Pitch runs on the pure-JavaScript backend
-there. The two produce **byte-identical** files — that is what the
-reproducibility check compares — so the command line and the API still
-agree even though they are using different backends.
-
-Without the native backend, TensorFlow.js cannot fetch a `file://` URL,
-because it fetches the model's manifest and its weight shards itself. The
-API brings its own fetch for that (`fileFetch` in
-`src/api/model-loader.ts`), so Basic Pitch works on the box.
-
-## 6. How it runs
-
-- **The server** is `src/api/`, bundled into one file by
-  `scripts/build-api.mjs`. It listens on `127.0.0.1:8787` and nothing else
-  can reach it.
-- **nginx** proxies `/api/` to it. The site's own vhost carries the
-  `location /api/` block.
-- **systemd** runs it as `voidtrackr-api.service`, from `/opt/voidtrackr/api`.
-- **The weights** are the ones the site already serves, at
-  `/var/www/voidtrackr/model-onnx`, so the box holds one copy of them
-  rather than two.
-- **The upload is never written to disk.** It is read into memory,
-  converted, and the MIDI is sent back.
+The weights themselves are still on the box — they are 367 MB — because
+that is where the browser has always fetched them from, and a client on the
+network fetches them from the same place.
 
 ### The settings
 
-| variable | default | what it does |
-|---|---|---|
-| `VOIDTRACKR_PORT` | `8787` | the port to listen on |
-| `VOIDTRACKR_HOST` | `127.0.0.1` | the address to listen on |
-| `VOIDTRACKR_MODEL_DIR` | `models/onnx` | where the ONNX weights are |
-| `VOIDTRACKR_MODEL_PATH` | `public/model/model.json` | where the Basic Pitch model is |
-| `VOIDTRACKR_API_TOKEN` | — | a token callers have to present |
-| `VOIDTRACKR_MAX_UPLOAD` | `100` | the largest upload, in megabytes |
-| `VOIDTRACKR_CONCURRENCY` | `1` | how many conversions at once |
+| | |
+|---|---|
+| `VOIDTRACKR_HOST` | `127.0.0.1` — nginx is the only thing that should reach it |
+| `VOIDTRACKR_PORT` | `8787` |
+
+There is no token, no upload limit and no concurrency setting, because
+there is nothing to upload and nothing to run. The API is read-only and
+holds nothing in memory.
+
+## 6. How it runs
+
+```
+nginx  ──▶  /            the static site
+     │  ──▶  /model/     Basic Pitch's weights
+     │  ──▶  /model-onnx/  the ONNX weights
+     │  ──▶  /api/       the API ──▶ 127.0.0.1:8787
+```
+
+The API listens on the loopback address only. nginx is the only thing that
+can reach it, and it is the only thing that should.
 
 ## 7. The same file, whichever way it is asked for
 
-The tool promises that the same input gives the same file however it is
-asked for. The API is a new way of asking, so it had to be checked.
+The point of the arrangement is that a recording converted in the browser
+and the same recording converted on the command line come out as the same
+bytes. The browser and the command line share the conversion code in
+`src/core/convert.ts`; there is no second implementation to drift.
 
-The conversion lives in `src/api/convert.ts`, and the command line calls it
-as well. There is one code path, not two that agree today.
-
-Measured:
-
-| what | the file |
-|---|---|
-| the command line, Basic Pitch, `test/sample.wav` | `1014 bytes` |
-| the API, Basic Pitch, `test/sample.wav` | the same bytes |
-| the command line, the piano model, a 24 second clip | `4630 bytes` |
-| the API, the piano model, the same clip | the same bytes |
-
-`scripts/compare-midi.mjs` is what compares them:
-
-```bash
-node scripts/compare-midi.mjs <the cli output>.mid <the api output>.mid
-```
-
-The browser and the command line were already byte-identical. Now the API
-is in the same set.
+Taking the model's weights from the server does not change that either.
+The command line with `--server` and the command line without it produce
+byte-identical files, and there is a test that runs both and compares them.
 
 ## 8. The measurements
 
-| script | what it answers |
-|---|---|
-| `scripts/build-api.mjs` | builds the server into one file, and writes the package.json the box installs from |
-| `test/api.test.ts` | the parser, the parameters, and a request end to end |
-
-The tests cover the parts that are easy to get wrong: a multipart body
-with binary content in it, the fields arriving after the file, a parameter
-that is not a number, the wrong method, an address that does not exist, and
-a conversion that has to come back as a MIDI file with the right notes in
-it.
+- The API answers in a few milliseconds. It does no work.
+- The weights are 367 MB in total: Basic Pitch 0.9 MB, piano 96 MB,
+  Tsumugi 74 MB, YourMT3+ 181 MB, Okarina 21 MB.
+- A client that fetches a model caches it, so the second run of a model
+  downloads nothing.
+- The browser fetches the same weights from the same place and converts
+  locally. It never asks this API for anything — it does not need to.
