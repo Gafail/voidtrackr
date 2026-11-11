@@ -534,10 +534,17 @@ npm run check:reproducibility
   running nginx and nothing else. The webroot is `/var/www/voidtrackr` and
   the vhost is `/etc/nginx/sites-available/voidtrackr.conf`. There is no
   service behind it, no process and no runtime: it serves files.
-- **The box is small:** two cores and a gigabyte of memory. That does not
-  limit what the tool can do, because the box only holds files: the model's
-  weights (367 MB) and the site. The model runs in the browser, so the
-  machine that opens the page needs the memory, not the box.
+- **The box is small, and that is fine.** Two cores and a gigabyte of memory
+  at the time of writing; the container is being cut to **1 core and 256 MB**,
+  which is the user's manual job on the Proxmox side and is not done by this
+  project. It does not need to be bigger, because the box only holds files:
+  the model's weights (367 MB) and the site. Measured after the API was
+  removed, the whole stack is **53 MB resident** — journald 27 MB,
+  networkd 26 MB, systemd 15 MB, nginx under 10 MB — and streaming the 96 MB
+  piano weight file moves that by about 2 MB, because the file goes through
+  the reclaimable page cache and not through nginx's heap. The model runs in
+  the browser, so the machine that opens the page needs the memory, not the
+  box.
 - **Deploy:** `./deploy.sh 192.168.100.109` from this folder. It builds,
   rsyncs, takes the old API off the box if it is still there, installs the
   vhost and headers, disables the template's own base site, validates with
