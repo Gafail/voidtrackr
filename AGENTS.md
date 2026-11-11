@@ -64,6 +64,10 @@ model the default is.
 - **Model seam:** `TranscriptionModel` in `src/core/model.ts` — a model returns
   *notes grouped into parts*, not a matrix. Everything downstream (drums,
   tempo, key, MIDI writing) is shared between models.
+- **Frequency range:** two bounds in hertz that choose which notes are kept,
+  in the app's header and as `--range` on the command line. It selects *notes*
+  after the model has run; the audio is never filtered, because filtering the
+  audio was measured and it is much worse. See "Known gotchas".
 - **Deploy pipeline:** `npm run build` → a static `dist/`, rsynced to the
   container's webroot by `deploy.sh`. nginx serves the files; there is no
   runtime on the box.
@@ -99,6 +103,8 @@ src/core/     the pipeline — no DOM, no Node specifics, runs in both
   tuning.ts       A440 tuning correction
   beat.ts         the model-independent beat grid tracker (not wired in)
   notes.ts        note naming and the shared note helpers
+  range.ts        the frequency range: which notes to keep
+  quantise.ts     the grid: snapping notes to a fixed rate
   types.ts        the shared data types
   sha256.ts       the pure-JavaScript SHA-256 fallback
   midi.ts         the MIDI writer, including the key-signature fix
@@ -268,6 +274,18 @@ npm run check:reproducibility
   standard deviation, the Viterbi runs over the frames the graph marks as
   valid rather than all 345 of them, and a gap merge takes the
   continuation's offset rather than keeping either one.
+- **Never filter the audio by frequency band before the model.** This was
+  measured on the user's own material and it is much worse than one pass over
+  the whole mix: transcribing a recording low-passed at 400 Hz and keeping the
+  notes below 400 Hz recovered 14 of Okarina's low notes, where transcribing
+  the whole mix and keeping the same notes recovered 142. A model reads a note
+  from its whole harmonic series, and a band-limited recording takes that
+  evidence away — a model handed only harmonics invents notes, which is how
+  the 1200–2000 Hz run came back with 2466 notes across the whole keyboard,
+  63 % of them outside the band that produced them. The tool's frequency range
+  therefore selects *notes* after the model has run (`src/core/range.ts`), and
+  never touches the audio. The numbers are in `docs/model-research.md`,
+  section 6.
 - **`@tensorflow/tfjs-node` 4.21 and 4.22 ship a broken build.** Its published
   code requires Node's own `util` module where it meant to require
   TensorFlow.js's utilities, and then calls a function that does not exist
@@ -284,6 +302,19 @@ npm run check:reproducibility
 - **Okarina decodes notes from the offset head**, not from a sustain
   threshold — the sustain decays over several frames, so threshold-decided
   ends were badly over-long. This alone took F1 from 70.1 % to 81.5 %.
+- **The grid is not the beat, and the two must not be confused.**
+  `src/core/quantise.ts` snaps the notes to a fixed number of slots per
+  second, for something that runs at a fixed rate — a game rendering 30
+  frames a second. It is deliberately *not* the beat grid in `beat.ts`,
+  which is still unwired: the beat grid needs a tempo and a phase, it is
+  only accurate to about 12 ms, and the model's own onsets are better than
+  it, so snapping to the beat would replace a good time with a worse one.
+  Snapping to a frame grid is the opposite case — the frame is what the
+  note will be drawn on, so agreeing with it is the more accurate answer.
+  The grid never touches the tempo or the key, which are estimated from the
+  notes as the model found them. A MIDI file stores ticks rather than
+  seconds, so a phase lands on the nearest tick — 1.04 ms at 480 PPQ and
+  120 BPM — and the spacing between the slots is exact.
 - **Do not use `pkill -f "vite --port 5173"` to stop the dev server.** The
   pattern matches the shell running the command. Use `ps aux | grep "[v]ite"`
   and kill by PID.
@@ -332,9 +363,12 @@ npm run check:reproducibility
 - **SSH:** the container's host keys were regenerated on provisioning — the
   clone had inherited the template's identity. The old ones are in
   `/root/.trash-removed/` on the box.
-- **Current pipeline version:** 0.4.0 (`src/core/version.ts`) — the default
-  model changed from Basic Pitch to ByteDance's piano model, after all five
-  were measured over the user's own 19 tracks.
+- **Current pipeline version:** 0.5.0 (`src/core/version.ts`) — the frequency
+  range was added: two bounds in hertz that choose which notes are kept, and
+  the grid: a fixed number of slots per second that the notes are snapped to.
+  A conversion that does not ask for either produces the same notes as 0.4.0.
+  The default model is still ByteDance's piano model, which was chosen after
+  all five were measured over the user's own 19 tracks.
 - **Models in the catalogue:** Piano Transcription (CC BY 4.0, the default),
   Basic Pitch (Apache-2.0), Tsumugi (MIT), YourMT3+ (Apache-2.0),
   Okarina (CC BY-NC-SA 4.0, non-commercial).

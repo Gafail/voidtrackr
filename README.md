@@ -23,6 +23,10 @@ npm run dev       # http://127.0.0.1:5173
   are drums to find.
 - **Estimates tempo and key**, both editable afterwards.
 - **Gives you a piano roll** to move, resize, add and delete notes in.
+- **Lets you keep only the part of the spectrum you want** — a range in hertz,
+  from nothing at all to everything the keyboard holds.
+- **Snaps the notes to a grid** — so they land on the frames of a screen that
+  renders at a fixed rate.
 - **Exports multi-track MIDI** — SMF format 1, one track per part.
 
 A single-shot transcription is missing most of that, so it is added around the
@@ -177,6 +181,20 @@ piano roll. Click to select, drag to move, drag an edge to resize, and use
 <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Z</kbd> undoes. The model picker is in the
 header, so you can change model before dropping a file in.
 
+The **Range** boxes in the header choose which part of the spectrum to keep —
+say 0–400 Hz for the bass end of a track. They act on the notes the model
+found, not on the audio, so the model always hears the whole recording and the
+notes you keep are exactly the notes that were found. Nothing is thrown away:
+widen the range and the rest comes back.
+
+The **Grid** boxes snap the notes to a fixed grid of slots per second. Set it
+to 30 and every onset lands on a multiple of 33.3 ms, which is exactly where
+a game rendering 30 frames a second will draw them — a note that starts
+between two frames cannot be shown on the frame it belongs to, so the file is
+better off agreeing with the frames than being more precise than the screen.
+The second box shifts the grid, in milliseconds, for when the screen's frames
+do not start with the recording.
+
 ### On the command line
 
 ```bash
@@ -186,6 +204,9 @@ npm run cli -- song.mp3 -o out/ --model tsumugi
 npm run cli -- song.mp3 -o out/ --model yourmt3
 npm run cli -- song.mp3 -o out/ --model piano
 npm run cli -- song.mp3 -o out/ --model okarina
+npm run cli -- song.mp3 -o out/ --range 400      # everything below 400 Hz
+npm run cli -- song.mp3 -o out/ --range 100-1200 # between 100 and 1200 Hz
+npm run cli -- song.mp3 -o out/ --quantize 30    # on a 30 FPS grid
 npm run cli -- --list-models
 ```
 

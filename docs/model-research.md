@@ -595,9 +595,72 @@ follows the phase instead of laying down a constant grid. Now that the model
 question is settled, this is the best remaining idea for improving the output
 further.
 
+**A frame grid, which is a different thing.** The beat grid is musical: it
+needs a tempo and a phase, and it is only worth having if it is more accurate
+than the model. A frame grid is not musical at all. A game that renders 30
+frames a second can only draw a note on one of its own frames, so a note
+that starts 4 ms after a frame boundary lands on the next frame whatever
+the MIDI says. Snapping the onsets to the frame grid — 33.3 ms slots at 30
+per second — makes the file agree with the screen, and the error is at most
+half a frame, which is well under what anybody can hear or see. That is now
+a tool: `--quantize 30` on the command line, and the **Grid** boxes in the
+app. It is deliberately *not* the beat grid in `beat.ts`, which is still
+unwired, and it leaves the tempo and the key alone.
+
 **Stem separation.** Demucs would help the vocals, but its own README warns
 that the piano stem has "a lot of bleeding and artifacts", and Okarina
 already separates vocal, bass and other on its own.
+
+**Splitting the audio into bands and transcribing each one.** The idea was
+that a model given less to listen to has less to be confused by: run it over
+0–400 Hz, then 400–1200 Hz, then 1200–2000 Hz, and put the three note lists
+together. It was measured, on "1 - You Say When" with the piano model, and
+it is much worse than one pass over the whole mix.
+
+| | notes | F1 against Okarina |
+| --- | --- | --- |
+| the whole mix, one pass | 2245 | **28.9 %** |
+| band 0–400 Hz | 1032 | 5.7 % |
+| band 400–1200 Hz | 4371 | 17.7 % |
+| band 1200–2000 Hz | 2466 | 6.9 % |
+| the three merged | 7869 | 10.9 % |
+
+Three things went wrong, and all three are properties of the music rather
+than of the implementation:
+
+* **A band cuts across a note, not through it.** A model reads a note from
+  its whole harmonic series, so a low-pass filter takes away the evidence
+  that places the fundamental. The project had already found this with Basic
+  Pitch — `src/core/basic-pitch.ts` says that low-passing the bass "made the
+  bass worse" and introduced octave errors — and the design that shipped is
+  the opposite: the whole mix for the low register, a high-pass for the top,
+  and the *notes* filtered afterwards.
+* **The third band is nearly empty of notes.** On this material 80.7 % of the
+  energy is below 400 Hz, 18.1 % is between 400 and 1200 Hz, and 0.8 % is
+  between 1200 and 2000 Hz. Only nine notes (MIDI 87–95) could have their
+  fundamental up there; everything else in that band is a harmonic of a note
+  far below it.
+* **A model handed only harmonics invents notes.** The 1200–2000 Hz run
+  produced 2466 notes spread over the whole keyboard, and 63 % of them had a
+  fundamental outside the band that supposedly produced them.
+
+The fairest version of the test is to ask what the band was for. Scored
+against only Okarina's notes below 400 Hz, the whole mix recovers **142** of
+them and the low-passed run recovers **14** — ten times worse, from the same
+model, in one pass.
+
+So the tool grew a **frequency range** instead, which is the useful part of
+the idea without the damage: two bounds in hertz that choose which notes are
+kept, applied to the notes the model found rather than to the audio. The
+audio is never filtered, the model always hears the whole recording, and the
+notes that are kept are exactly the notes that were found. The range is in
+the app's header and on the command line as `--range`.
+
+**Stem separation is still the real answer to "clear tracks".** It separates
+sources, which is what a bloom wants, rather than slicing frequencies through
+sources. It was left alone because of Demucs' piano-stem artifacts, not
+because it was measured against the alternatives.
+
 
 ---
 
