@@ -43,31 +43,6 @@ export interface ModelDescriptor {
   fetchCommand: string;
   /** What to expect from it, for the user. */
   notes: string;
-  /**
-   * The path the site serves this model's weights from.
-   *
-   * It is not the same shape for every model, and that is the point of
-   * stating it: Basic Pitch is a TensorFlow.js model and its files sit in
-   * their own directory, while the ONNX models sit under one root — and
-   * Okarina's sit at the root of it rather than in a folder of their own,
-   * because that is how they were fetched. A caller that wants to check a
-   * model is really there reads this rather than guessing a path from the
-   * model's id.
-   */
-  weightsPath: string;
-  /**
-   * The directory the lock file's file names are relative to.
-   *
-   * It is the same as `weightsPath` for Basic Pitch, whose files sit at the
-   * root of its own directory, and for Okarina, whose files sit at the root
-   * of the ONNX tree. The other three are in a folder of their own inside
-   * that tree, so their lock file names carry the folder with them and this
-   * is the tree rather than the folder.
-   *
-   * A client that fetches the weights joins this to the file names in the
-   * lock file, and gets exactly the bytes the model was pinned to.
-   */
-  weightsRoot: string;
 }
 
 export const MODELS: Record<ModelId, ModelDescriptor> = {
@@ -84,8 +59,6 @@ export const MODELS: Record<ModelId, ModelDescriptor> = {
     notes:
       'Finds fewer notes than the newer models and puts onsets on a frame grid. ' +
       'It is the default because it is small, fast and permissively licensed.',
-    weightsPath: '/model/',
-    weightsRoot: '/model/',
   },
   tsumugi: {
     id: 'tsumugi',
@@ -101,8 +74,6 @@ export const MODELS: Record<ModelId, ModelDescriptor> = {
       'The weights are MIT, not just the code. It extends the Neural Semi-CRF that ' +
       'TransKun introduced. Its training mix includes MAESTRO, which is CC BY-NC-SA, ' +
       'so commercial use is your own assessment to make.',
-    weightsPath: '/model-onnx/tsumugi/',
-    weightsRoot: '/model-onnx/',
   },
   yourmt3: {
     id: 'yourmt3',
@@ -119,8 +90,6 @@ export const MODELS: Record<ModelId, ModelDescriptor> = {
       'Slakh against Basic Pitch at 0.465. It is also the slowest — roughly a fifth ' +
       'of real time on the CPU, and it wants a couple of gigabytes of memory. ' +
       'The authors state that MAESTRO in their training mix cannot be licensed by them.',
-    weightsPath: '/model-onnx/yourmt3/',
-    weightsRoot: '/model-onnx/',
   },
   piano: {
     id: 'piano',
@@ -136,8 +105,6 @@ export const MODELS: Record<ModelId, ModelDescriptor> = {
       'It regresses the exact onset and offset time instead of snapping to a frame ' +
       'grid, which is why its timing is so much better. It is a piano model, so on a ' +
       'full mix it picks out the piano-like content.',
-    weightsPath: '/model-onnx/piano/',
-    weightsRoot: '/model-onnx/',
   },
   okarina: {
     id: 'okarina',
@@ -153,8 +120,6 @@ export const MODELS: Record<ModelId, ModelDescriptor> = {
       'Finds substantially more notes and separates them into vocal, bass and other. ' +
       'Its onsets land on a 32 ms grid, so snapping them to the beat helps. ' +
       'The weights are licensed for non-commercial use only, so it stays opt-in.',
-    weightsPath: '/model-onnx/',
-    weightsRoot: '/model-onnx/',
   },
 };
 

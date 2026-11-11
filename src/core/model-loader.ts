@@ -1,9 +1,10 @@
 /**
  * Loading a model from disk.
  *
- * Both the command line and the API need the same models, loaded the same
- * way, so that a file produced by one is byte-identical to a file produced
- * by the other. The loading lives here and nowhere else.
+ * The browser fetches its weights over HTTP; Node reads them off disk.
+ * This is the Node half, and it is used by the tests and by the scripts
+ * that measure what a model costs, so that what they measure is what the
+ * browser would do.
  *
  * Every model is checked against its lock file before it runs. If the
  * weights do not match, the output would differ from every previous run, so

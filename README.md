@@ -3,10 +3,10 @@
 **A recording in, a MIDI file out. Nothing is uploaded, and the audio never
 leaves your machine.**
 
-voidtrackr turns a finished recording into editable multi-track MIDI. It runs
-entirely locally — in the browser, or on the command line for batch work.
-There is no account, no upload endpoint, no server and no telemetry: the audio
-is decoded, transcribed and written back out on the machine that opened it.
+voidtrackr turns a finished recording into editable multi-track MIDI. It is a
+web app, and it runs entirely on the machine that opened it: there is no
+account, no upload endpoint, no server and no telemetry, and the audio is
+decoded, transcribed and written back out in the browser.
 
 ```bash
 npm install
@@ -107,8 +107,9 @@ than something to hope for:
 - **The output does not depend on the machine.** The sample rate is read out of
   the file's own header, so the same recording gives the same notes on any
   computer.
-- **The browser and the command line agree.** The browser and the CLI produce
-  byte-identical MIDI for the same input, on all five models.
+- **The browser and the test harness agree.** The browser and the Node path
+  the tests use produce byte-identical MIDI for the same input, on all five
+  models.
 - **A test guards it.** `npm test` converts the same recording twice and
   compares the bytes; `npm run check:reproducibility` also compares the native
   and pure-JavaScript TensorFlow backends, and checks the default model twice
@@ -144,9 +145,9 @@ models, and a model that reasons about onsets and offsets can be dropped in
 without touching the rest.
 
 `src/core/` holds the pipeline and is free of both DOM and Node specifics, so
-the same code runs in the browser and on the command line. The only difference
-is how audio is decoded: the browser uses the Web Audio API, Node uses a
-pure-JavaScript decoder, so the CLI needs no `ffmpeg`.
+the same code runs in the browser and in the tests. The only difference is
+how audio is decoded: the browser uses the Web Audio API, and the Node path
+used by the tests uses a pure-JavaScript decoder, so nothing needs `ffmpeg`.
 
 ## Installing
 
@@ -173,8 +174,6 @@ checkout that is all you need. The others are only fetched when you ask for
 them.
 
 ## Using it
-
-### In the browser
 
 `npm run dev`, then open <http://127.0.0.1:5173>.
 
@@ -216,57 +215,7 @@ browser with
 --unsafely-treat-insecure-origin-as-secure=http://192.168.100.109
 ```
 
-or serve the site over https with a certificate the machine trusts. The
-command line needs neither: it uses four threads on its own.
-
-### On the command line
-
-```bash
-npm run cli -- song.mp3 -o out/                  # the default model
-npm run cli -- song.mp3 -o out/ --model basic-pitch
-npm run cli -- song.mp3 -o out/ --model tsumugi
-npm run cli -- song.mp3 -o out/ --model yourmt3
-npm run cli -- song.mp3 -o out/ --model piano
-npm run cli -- song.mp3 -o out/ --model okarina
-npm run cli -- song.mp3 -o out/ --range 400      # everything below 400 Hz
-npm run cli -- song.mp3 -o out/ --range 100-1200 # between 100 and 1200 Hz
-npm run cli -- song.mp3 -o out/ --quantize 30    # on a 30 FPS grid
-npm run cli -- song.mp3 -o out/ --pianify        # arranged for two hands
-npm run cli -- --list-models
-```
-
-Full reference: `npm run cli -- --help`.
-
-### Over HTTP
-
-The site has an address you can call. The box runs a small service
-alongside it, at the same origin, that describes what the tool can do: the
-models and their licences, the parameters and their defaults, and where
-each model's weights are served from.
-
-```bash
-curl http://192.168.100.109/api/models
-curl http://192.168.100.109/api/parameters
-```
-
-There is a page about it at `/api/`, an OpenAPI document at
-`/api/openapi.json`, and the whole thing is in
-[`docs/api.md`](docs/api.md).
-
-**It does not take a recording.** There is no endpoint that accepts one and
-the server never reads a request body, so the audio cannot leave the
-machine it is on — not through the API, not through anything else. A
-script converts with the command line, optionally taking the model from
-the site:
-
-```bash
-npm run cli -- --server http://192.168.100.109 song.wav -o .
-```
-
-That fetches the model's weights over HTTP, checks each file against its
-pinned hash, and converts. The recording is read from disk and stays
-there. The file it produces is byte-identical to one made with the weights
-already on disk, and there is a test that runs both and compares them.
+or serve the site over https with a certificate the machine trusts.
 
 ## Commands
 
@@ -274,8 +223,6 @@ already on disk, and there is a test that runs both and compares them.
 |---|---|
 | `npm run dev` | the app on `127.0.0.1:5173` |
 | `npm run build` | typecheck and build for production into `dist/` |
-| `npm run build:api` | bundle the API server into `dist-api/` |
-| `npm run api` | run the API server on `127.0.0.1:8787` |
 | `npm run preview` | serve `dist/` on `127.0.0.1:4173` |
 | `npm run model` | fetch and verify the default model's weights |
 | `npm run model:piano` | fetch and verify the Piano Transcription weights |
@@ -286,7 +233,6 @@ already on disk, and there is a test that runs both and compares them.
 | `npm test` | the test suite |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run check:reproducibility` | compare repeat runs and both backends |
-| `npm run cli -- <input> -o <dir>` | convert on the command line |
 | `npm run evaluate -- <folder> --out eval` | transcribe a folder and write an HTML report |
 | `npm run evaluate -- --out eval --summary` | print the aggregate from the saved results, without transcribing again |
 
@@ -344,7 +290,7 @@ from that.
    display name, a licence, a fingerprint, the sample rate the model wants,
    and a `transcribe` method that returns notes grouped into parts.
 2. Add it to the catalogue in `src/core/registry.ts`, so it can be chosen in
-   the app and on the command line.
+   the app.
 3. Pin its weights by hash and check them before it runs.
 4. Run `npm test` and `npm run check:reproducibility`.
 

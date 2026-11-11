@@ -1,10 +1,11 @@
 /**
  * One conversion, from audio to MIDI.
  *
- * The command line and the API both call this. That is the point: the tool
- * promises that the same input gives the same file whichever way it is
- * asked for, and the only way to keep that promise is to have one code
- * path rather than two that agree today.
+ * This is the Node side of it: the browser has its own path through the
+ * same pipeline, and the tests and the measurement scripts use this one.
+ * Both decode the audio, run the model and write the MIDI in the same
+ * order, with the same options, so a file produced here and a file
+ * produced in the browser are byte-identical.
  */
 
 import { decodeAudio, prepareMono } from './audio';

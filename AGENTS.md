@@ -1,8 +1,8 @@
 # voidtrackr — AI Handoff
 
 > Turn a recording into editable multi-track MIDI, entirely on your own
-> machine. A browser app with a piano-roll editor, and a command-line
-> converter for batch work.
+> machine. A web app with a piano-roll editor. The browser does all of it,
+> and nothing is ever uploaded.
 
 **Status:** live on the LAN — `http://192.168.100.109/`
 **Domain:** none (LAN-only, no tunnel, no public DNS)
@@ -20,16 +20,21 @@ have to leave the machine it is on.
 ## Status
 
 **Live on the LAN, not deployed publicly.** The app is served as static files
-from a Proxmox LXC at `192.168.100.109`, and the CLI runs from `npm run cli`.
-There is no domain and no tunnel, so the site is reachable only from the LAN.
+from a Proxmox LXC at `192.168.100.109`. There is no domain and no tunnel, so
+the site is reachable only from the LAN.
+
+**It is a web app and nothing else.** There is no HTTP API and no command
+line: the browser is the only way to use it. An API was built and then
+removed — it took a recording, which is the one thing that breaks the
+promise; and a command line was never asked for in the first place.
 
 The source lives in its own repository, `https://github.com/Gafail/voidtrackr`,
 which is public. The folder is `~/Desktop/AudiotoMidi/` — the name on disk is
 not the name of the tool, and the user asked for it to stay that way.
 
 The tool is complete and verified: 89 tests pass, the type check is clean, the
-production build succeeds, and the browser and the command line produce
-byte-identical MIDI for all five models.
+production build succeeds, and the browser and the Node path the tests use
+produce byte-identical MIDI for all five models.
 
 **Okarina is the best model on this user's material** (F1 85.3 % against
 published Harmonica output, versus 30.4 % for the Basic Pitch pipeline) but it
@@ -60,27 +65,25 @@ research, the design and the cost are in `docs/pianify.md`.
 
 - **Frontend:** React 18 + TypeScript + Vite 6. Canvas piano roll, no UI
   framework. `src/app/`.
-- **Backend:** one small process, and no database. The browser does the work
-  when you use the site, and the command line does the same work in Node
-  for callers that are scripts. One conversion path, in `src/core/convert.ts`,
-  which both use — so a file from the browser and a file from the command
-  line are byte-identical. The API in `src/api/` does **not** convert; it
-  describes the tool (the models, the licences, the parameters, where the
-  weights are) and never receives a recording.
+- **Backend:** none. There is no server process, no API and no database. The
+  browser does all of the work: it decodes the audio, runs the model and
+  writes the MIDI file, on the machine that opened the page. The box serves
+  static files and nothing else.
 - **Models:** five, behind one interface. Basic Pitch (TensorFlow.js,
   Apache-2.0), Tsumugi (ONNX, MIT), YourMT3+ (ONNX, Apache-2.0), ByteDance's
   piano model (ONNX, CC BY 4.0) and Okarina (ONNX, CC BY-NC-SA). All are
   pinned by SHA-256.
-- **Persistence:** none. Files are read from disk or dropped into the page,
-  and the only output is a downloaded `.mid`. Nothing is ever uploaded: no
-  endpoint takes a recording, and the API never reads a request body.
-- **Audio decoding:** the Web Audio API in the browser; a pure-JavaScript
-  decoder (`src/core/audio-node.ts`) in Node, so the CLI needs no `ffmpeg`.
+- **Persistence:** none. Files are dropped into the page, and the only output
+  is a downloaded `.mid`. Nothing is ever uploaded: there is no endpoint, no
+  service and no process that could accept one.
+- **Audio decoding:** the Web Audio API in the browser. The pure-JavaScript
+  decoder (`src/core/audio-node.ts`) is for the tests and the measurement
+  scripts, so nothing needs `ffmpeg`.
 - **Model seam:** `TranscriptionModel` in `src/core/model.ts` — a model returns
   *notes grouped into parts*, not a matrix. Everything downstream (drums,
   tempo, key, MIDI writing) is shared between models.
 - **Frequency range:** two bounds in hertz that choose which notes are kept,
-  in the app's header and as `--range` on the command line. It selects *notes*
+  in the app's header. It selects *notes*
   after the model has run; the audio is never filtered, because filtering the
   audio was measured and it is much worse. See "Known gotchas".
 - **Deploy pipeline:** `npm run build` → a static `dist/`, rsynced to the
@@ -93,14 +96,11 @@ research, the design and the cost are in `docs/pianify.md`.
 ## File map
 
 ```
-src/core/     the pipeline — no DOM, no Node specifics, runs in both
-  convert.ts     one conversion, from audio to MIDI — the browser and the
-                 command line both call this
+src/core/     the pipeline — no DOM, no Node specifics
+  convert.ts     one conversion, from audio to MIDI — the Node path the
+                 tests and the measurement scripts use
   model-loader.ts  loading a model from disk, and the file:// fetch
   backend.ts     the native TensorFlow.js backend, when it is installed
-  parameters.ts  the parameters a conversion takes, in one table
-  weights-fetch.ts  taking a model's weights from a server, and checking
-                 them against the lock file
   model.ts        the TranscriptionModel interface and the lock helpers
   registry.ts     the model catalogue and DEFAULT_MODEL
   pipeline.ts     the shared finaliser: tune → model → drums → tempo/key → MIDI
@@ -110,11 +110,11 @@ src/core/     the pipeline — no DOM, no Node specifics, runs in both
   yourmt3.ts      the YourMT3+ model: spectrogram, token decode, event-to-note
   piano.ts        the ByteDance piano model: windowing and onset/offset pairing
   onnx.ts         the runtime-agnostic ONNX interface
-  onnx-node.ts    ONNX Runtime for Node
+  onnx-node.ts    ONNX Runtime for Node — the tests and the scripts
   onnx-web.ts     ONNX Runtime for the browser (wasm, lazily imported)
   onnx-weights.ts the shared weight check against a lock file
   audio.ts        decoding in the browser
-  audio-node.ts   decoding in Node
+  audio-node.ts   decoding in Node — the tests and the scripts
   sample-rate.ts  reading the real sample rate out of the file's header
   dsp.ts          FFT, spectrogram, autocorrelation
   constants.ts    the shared numbers, including the frame→time conversion
@@ -145,23 +145,12 @@ src/app/      the React app
   playback.ts    the Web Audio player
   styles.css     the Void theme — tokens, layout, components
 
-src/cli/      convert.ts — the command line converter
-
-src/api/      the HTTP API — it describes the tool, it does not run it
-  server.ts      the server: routing and the error shape
-  errors.ts      the error codes and their status codes
-  openapi.ts     the OpenAPI 3.1 document the server serves
-  index.ts       the entry point
-
 
 ops/nginx/    the deployment configuration
   voidtrackr.conf          the site vhost
   voidtrackr-headers.conf  the security headers, with this site's CSP
 
-ops/systemd/  voidtrackr-api.service — the API's service
-
 scripts/
-  build-api.mjs    bundle the API server into one file
   memory-models.mts  how much memory one model needs
   memory-probe.mts   the memory, window by window
   memory-stages.mts  the memory, stage by stage
@@ -224,17 +213,12 @@ npm run model:okarina      # fetch and verify the Okarina weights (~21 MB)
 npm run model:tsumugi      # fetch and verify the Tsumugi weights (~74 MB)
 npm run model:yourmt3      # fetch and verify the YourMT3+ weights (~181 MB)
 npm run build              # typecheck + vite build → dist/
-npm run build:api          # bundle the API server → dist-api/
 ./deploy.sh 192.168.100.109   # build, rsync, install the vhost, reload nginx
 ```
 
 `deploy.sh` finds the umbrella repo (for the shared deploy key) by looking at
 the siblings of this folder. It refuses to run against the placeholder address
 `192.0.2.0`, which is what the checked-in vhost carries instead of a real one.
-
-The API is bundled into one file with no dependencies, so the box installs
-nothing when it is deployed. That is deliberate: it keeps the box small, and
-it means there is no way for the server to end up running a model.
 
 The host is registered in the umbrella's `ops/vm.sh`, so it can also be reached
 directly:
@@ -247,7 +231,7 @@ Before calling any change done:
 
 ```bash
 npm run typecheck
-npm test                              # 101 tests
+npm test                              # 89 tests
 npm run check:reproducibility
 ```
 
@@ -271,18 +255,12 @@ npm run check:reproducibility
 - **A model change altered the output unexpectedly** → check
   `PIPELINE_VERSION` in `src/core/version.ts`; it is stamped into every
   exported file, so the stamp and the notes should move together.
-- **`npm run cli` crashes on import** → the broken `@tensorflow/tfjs-node`
+- **The Node path crashes on import** → the broken `@tensorflow/tfjs-node`
   4.21/4.22 build; see "Known gotchas".
 - **The site loads but the model never appears** → check the browser console
   first. `crypto.subtle` is undefined outside a secure context, and the
   Content-Security-Policy may be blocking WebAssembly. Both have bitten; see
   "Known gotchas".
-- **`/api/convert` answers 410** → that is correct, and it is supposed to.
-  The endpoint that took recordings is gone. A script that wants a MIDI file
-  uses the command line; see `docs/api.md`.
-- **The API answers 502** → the service is not up. Check it with
-  `systemctl status voidtrackr-api` on the box, and read the journal with
-  `journalctl -u voidtrackr-api -n 30 --no-pager`.
 - **To compare two MIDI files** → `node scripts/compare-midi.mjs a.mid b.mid`.
   To score one against a reference → `node scripts/evaluate-midi.mjs ref.mid est.mid`.
 
@@ -361,7 +339,7 @@ npm run check:reproducibility
 - **`@tensorflow/tfjs-node` 4.21 and 4.22 ship a broken build.** Its published
   code requires Node's own `util` module where it meant to require
   TensorFlow.js's utilities, and then calls a function that does not exist
-  there. `src/cli/convert.ts` adds the missing function before the backend
+  there. `src/core/backend.ts` adds the missing function before the backend
   loads.
 - The native backend registers itself as `tensorflow`, not `node`.
 - **ONNX Runtime reduces in an order that depends on the thread count, and
@@ -371,9 +349,9 @@ npm run check:reproducibility
   Node the piano graph's raw output *does* differ at four threads and above
   (one and two agree; four and eight agree with each other but not with one
   and two). The **exported MIDI does not**: it is byte-identical at 1/2/4/8
-  threads for every model in the catalogue, in the browser and on the command
-  line, and over the user's own tracks. The browser at any thread count and
-  the command line at any thread count both produce the same file. The
+  threads for every model in the catalogue, in the browser and in the Node
+  path, and over the user's own tracks. The browser at any thread count and
+  the Node path at any thread count both produce the same file. The
   differences are in the last bits of a float and the model's thresholds turn
   them into the same notes. `docs/threading.md` has the full record.
 - **The browser cannot thread on plain HTTP at a LAN address, whatever the
@@ -412,37 +390,25 @@ npm run check:reproducibility
 - **TensorFlow.js cannot fetch a `file://` URL without the native backend.**
   It fetches the model's manifest and its weight shards itself, and Node's
   own `fetch` does not understand that scheme. The native backend patches
-  it; the command line brings its own (`fileFetch` in
+  it; the Node path brings its own (`fileFetch` in
   `src/core/model-loader.ts`). Without it, Basic Pitch fails with "fetch
   failed".
-- **The nginx `location /api/` block must not let nginx swap the API's
-  errors for the site's 404 page.** `proxy_intercept_errors off` is what
-  keeps them as the JSON they are.
-- **A model's weights are not at `/model-onnx/<id>`.** The API's catalogue
-  used to guess that path, and it was wrong for two models of five: Basic
-  Pitch is a TensorFlow.js model and its files are in `/model/`, and
-  Okarina's ONNX files sit at the root of `/model-onnx/` rather than in a
-  folder of their own. The path is now stated in the catalogue
-  (`weightsPath` in `src/core/registry.ts`) and checked by a test against
-  the directory constants the loaders use, so renaming a folder breaks the
-  test rather than the site. Do not guess this path again — read it from
-  the catalogue.
-- **The API must never take a recording.** This is the rule the whole
-  project rests on: a recording goes in and a MIDI file comes out, on the
-  machine that holds the recording, and nothing is uploaded. An upload
-  endpoint was built and then removed, because it was the one thing that
-  broke the promise, and "it is on our own LAN" is not a reason to break
-  it for anyone else on the network. The API describes the tool and never
-  reads a request body; `POST /api/convert` answers 410, and a test
-  checks that the server answers a request whose body never ends without
-  waiting for it. **If a function cannot be done without sending the
-  recording to the box, the function does not get built.**
-- **The API's directory on the box must not be synced with deletion.** It
-  holds the smoke test's recording, and deleting it would throw that away
-  on every deploy. The API's dependencies are gone now — it has none — but
-  the rule stands for anything else that directory may come to hold. The
-  first attempt at this filled the box's page cache with the ONNX runtime
-  and took it to its knees; it had to be restarted.
+- **A model's weights are not at `/model-onnx/<id>`.** The layout is not
+  guessable from the model's id: Basic Pitch is a TensorFlow.js model and
+  its files are in `/model/`, and Okarina's ONNX files sit at the root of
+  `/model-onnx/` rather than in a folder of their own. The paths are in
+  the lock files, and the folder names are constants next to the models
+  (`PIANO_DIR`, `TSUMUGI_DIR`, `YOURMT3_DIR` in `src/core/`). Change one
+  of those and the lock file and the site's paths have to change with it.
+- **There must never be an endpoint that takes a recording.** This is the
+  rule the whole project rests on: a recording goes in and a MIDI file
+  comes out, on the machine that holds the recording, and nothing is
+  uploaded. An upload endpoint was built and then removed, because it was
+  the one thing that broke the promise, and "it is on our own LAN" is not
+  a reason to break it for anyone else on the network. The tool is a
+  static site now: nginx serves files and there is no process behind it.
+  **If a function cannot be done without sending the recording to the
+  box, the function does not get built.**
 - **Okarina's timebase is measured, never assumed.** The frame period is
   exactly 0.032 s and the leading context exactly 0.976 s, fitted by least
   squares against tone bursts at known times. The earlier constants
@@ -565,26 +531,17 @@ npm run check:reproducibility
 ## Live operations state
 
 - **Site:** `http://192.168.100.109/` — a Proxmox LXC named `voidtrackr`,
-  running nginx and the API service. The webroot is `/var/www/voidtrackr` and the
-  vhost is `/etc/nginx/sites-available/voidtrackr.conf`.
+  running nginx and nothing else. The webroot is `/var/www/voidtrackr` and
+  the vhost is `/etc/nginx/sites-available/voidtrackr.conf`. There is no
+  service behind it, no process and no runtime: it serves files.
 - **The box is small:** two cores and a gigabyte of memory. That does not
   limit what the tool can do, because the box only holds files: the model's
-  weights (367 MB) and the site. The model runs on the client, so a client
-  that wants Tsumugi needs 1.18 GB to itself, and the box is not in that
-  conversation.
-- **The API** is at `http://192.168.100.109/api/`, on the same origin as
-  the site. It describes the tool — the models, their licences, the
-  parameters, where the weights are — and it **never receives a recording**.
-  `POST /api/convert` answers 410. `docs/api.md` is the record.
-- **The API has no dependencies.** It is one bundled file, the box installs
-  nothing, and the service asks for 256 MB it will not use. The ONNX
-  runtime and TensorFlow.js the old one needed are gone from the box; the
-  deploy moves them to `/root/.trash-removed/` the first time it runs.
+  weights (367 MB) and the site. The model runs in the browser, so the
+  machine that opens the page needs the memory, not the box.
 - **Deploy:** `./deploy.sh 192.168.100.109` from this folder. It builds,
-  rsyncs, installs the API and its service, installs the vhost and headers,
-  disables the template's own base site, validates with `nginx -t`,
-  reloads, and smoke tests — including a check that the API still refuses a
-  recording, because that is the one thing that must not change.
+  rsyncs, takes the old API off the box if it is still there, installs the
+  vhost and headers, disables the template's own base site, validates with
+  `nginx -t`, reloads, and smoke tests the pages and the weights.
 - **Host registration:** `ops/vm.sh` in the umbrella repo, under `voidtrackr`,
   with the shared deploy key. `./ops/vm.sh voidtrackr 'hostname'`.
 - **SSH:** the container's host keys were regenerated on provisioning — the
@@ -597,8 +554,8 @@ npm run check:reproducibility
   the runtime reduces in an order that depends on the thread count — true of
   the raw output of a graph, false of the exported file, which is identical at
   1, 2, 4 and 8 threads for every model. A conversion takes about half the
-  time again: 44 seconds to 30 in the browser, 22 to 12 on the command line,
-  and the notes do not change. The browser needs
+  time again: 44 seconds to 30 in the browser, and the notes do not change.
+  The browser needs
   `--unsafely-treat-insecure-origin-as-secure=http://192.168.100.109`, because
   plain HTTP at a LAN address is not a secure context and the isolation
   headers alone do nothing there; the app shows the count the browser is

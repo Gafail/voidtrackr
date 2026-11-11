@@ -73,7 +73,6 @@ USER="${VOIDTRACKR_USER:-root}"
 # other Void* host uses — not a per-project key.
 KEY="${VOIDTRACKR_KEY:-$REPO_ROOT/ops/keys/thevoidco-lxc-id_ed25519}"
 WEBROOT="/var/www/voidtrackr"
-API_DIR="/opt/voidtrackr/api"
 
 # The token in the checked-in vhost that stands in for the real address.
 PLACEHOLDER_IP="192.0.2.0"
@@ -157,7 +156,6 @@ if [ ! -e "$DEFAULT_WEIGHTS" ]; then
 fi
 
 (cd "$SCRIPT_DIR" && npm run build)
-(cd "$SCRIPT_DIR" && npm run build:api)
 
 # Okarina's weights sit at the root of model-onnx/; the others have a folder
 # of their own. Each model is checked by the path the browser actually asks
@@ -181,65 +179,25 @@ say "Uploading site files to ${HOST}:${WEBROOT}"
 "${RSYNC[@]}" --rsync-path="mkdir -p '$WEBROOT' && rsync" \
   "$SCRIPT_DIR/dist/" "$USER@$HOST:$WEBROOT/"
 
-# 3. The API.
+# 3. Take the API off the box, if it is still there.
 #
-#    The site is static, but a tool that is driven from a script needs an
-#    address to call. The API is a small Node process on the box, listening
-#    on 127.0.0.1, and nginx proxies /api/ to it.
+#    There was an API once: a service on the box that described the tool.
+#    It is gone, and so is its service, its directory and its nginx
+#    location. The box serves the website and nothing else.
 #
-#    It describes the tool: the models, their licences, the parameters and
-#    where the weights are. It does not convert anything and it never
-#    receives a recording, so it has no dependencies at all — the bundle is
-#    one file and the box installs nothing.
-say "Installing the API"
-"${SSH[@]}" "$USER@$HOST" "mkdir -p '$API_DIR'"
-# This one does not delete what is on the box. The API directory holds the
-# smoke test's recording, and `--delete` would throw it away on every
-# deploy.
-rsync -az --chmod=D755,F644 -e "$RSYNC_SSH" \
-  --rsync-path="mkdir -p '$API_DIR' && rsync" \
-  "$SCRIPT_DIR/dist-api/" "$USER@$HOST:$API_DIR/"
-
-# A recording for the smoke test to convert. It is the test signal from the
-# repository, so the check does not need a real song.
-"${SCP[@]}" "$SCRIPT_DIR/test/sample.wav" "$USER@$HOST:$API_DIR/test.wav"
-
-# The API has no dependencies, so there is nothing to install. The
-# directory the old one left behind — the ONNX runtime and TensorFlow.js,
-# which the server used to need because it used to do the converting — is
-# moved aside rather than deleted, so it can be put back if it is wanted.
+#    The directory is moved rather than deleted, so it can be put back if
+#    it is ever wanted.
+say "Removing the API, if it is still there"
 "${SSH[@]}" "$USER@$HOST" "
-  if [ -d '$API_DIR/node_modules' ]; then
+  systemctl disable --now voidtrackr-api >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/voidtrackr-api.service
+  systemctl daemon-reload
+  systemctl reset-failed voidtrackr-api >/dev/null 2>&1 || true
+  if [ -d /opt/voidtrackr/api ]; then
     mkdir -p /root/.trash-removed
-    mv '$API_DIR/node_modules' /root/.trash-removed/voidtrackr-node_modules-\$(date +%s)
-    echo 'the old dependencies were moved to /root/.trash-removed/'
+    mv /opt/voidtrackr/api /root/.trash-removed/voidtrackr-api-\$(date +%s)
   fi
 "
-
-"${SCP[@]}" "$SCRIPT_DIR/ops/systemd/voidtrackr-api.service" \
-  "$USER@$HOST:/tmp/voidtrackr-api.service"
-"${SSH[@]}" "$USER@$HOST" \
-  "install -m 644 /tmp/voidtrackr-api.service /etc/systemd/system/voidtrackr-api.service && \
-   rm -f /tmp/voidtrackr-api.service && \
-   systemctl daemon-reload && \
-   systemctl enable voidtrackr-api >/dev/null 2>&1 && \
-   systemctl restart voidtrackr-api"
-
-# The API has to be answering before nginx starts pointing at it, or the
-# first request after a deploy gets a 502.
-for attempt in $(seq 1 30); do
-  if "${SSH[@]}" "$USER@$HOST" \
-      "curl -fsS -m 3 http://127.0.0.1:8787/api/health" >/dev/null 2>&1; then
-    echo "the API is up"
-    break
-  fi
-  if [ "$attempt" = "30" ]; then
-    echo "error: the API did not come up." >&2
-    "${SSH[@]}" "$USER@$HOST" "journalctl -u voidtrackr-api -n 30 --no-pager" >&2 || true
-    exit 1
-  fi
-  sleep 1
-done
 
 # 4. Install the nginx vhost and this site's headers.
 #    The source files live here, so they are copied across first — `install`
@@ -285,33 +243,10 @@ for path in / /404.html /robots.txt /model/model.json /model-onnx/okarina_m.onnx
             /model-onnx/tsumugi/tsumugi_other_v1_5.pos32i_i32.onnx \
             /model-onnx/yourmt3/encoder.onnx \
             /model-onnx/piano/piano_kong.onnx \
-            /ort/ort-wasm-simd-threaded.wasm \
-            /api/health /api/models /api/parameters /api/openapi.json; do
+            /ort/ort-wasm-simd-threaded.wasm; do
   code="$("${SSH[@]}" "$USER@$HOST" \
     "curl -s -o /dev/null -w '%{http_code}' -H 'Host: ${HOST}' http://127.0.0.1$path")"
   printf '  %-58s %s\n' "$path" "$code"
 done
-
-# The API is the one thing here that can be up and still be broken, so it
-# is asked to do the job rather than only to answer.
-say "Checking the API describes the tool"
-"${SSH[@]}" "$USER@$HOST" \
-  "curl -fsS -m 30 -H 'Host: ${HOST}' http://127.0.0.1/api/models | head -c 20" > /tmp/voidtrackr-models.txt 2>&1 || {
-  echo "error: the API did not answer with the catalogue." >&2
-  cat /tmp/voidtrackr-models.txt >&2
-  exit 1
-}
-echo "  it answered with the catalogue"
-
-# The endpoint that took a recording must stay gone. This is the one that
-# would break the promise, so it is checked rather than assumed.
-gone="$(("${SSH[@]}" "$USER@$HOST" \
-  "curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Host: ${HOST}' \
-     -F file=@/opt/voidtrackr/api/test.wav http://127.0.0.1/api/convert") || true)"
-if [ "$gone" != "410" ]; then
-  echo "error: the API accepted a recording (${gone}). It must not." >&2
-  exit 1
-fi
-echo "  it still refuses a recording"
 
 say "Live at http://${HOST}/"

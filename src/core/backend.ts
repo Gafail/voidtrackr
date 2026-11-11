@@ -2,8 +2,8 @@
  * The native TensorFlow.js backend, when it is installed.
  *
  * Basic Pitch needs TensorFlow.js. The pure-JavaScript backend works
- * everywhere, but the native one is several times faster, and the command
- * line has always used it.
+ * everywhere, but the native one is several times faster, and the tests
+ * and the measurement scripts use it.
  *
  * Its published build has a packaging bug: it requires Node's own `util`
  * module where it meant to require TensorFlow.js's utilities, then calls a
@@ -16,9 +16,8 @@
  * backend is imported, which is why this is a function rather than a side
  * effect at module scope.
  *
- * The web server may not have the native backend installed — it is a large
- * native module and the box it runs on is small — so the import is allowed
- * to fail. Basic Pitch then runs on the pure-JavaScript backend, which is
+ * The native backend is a large native module, so the import is allowed to
+ * fail. Basic Pitch then runs on the pure-JavaScript backend, which is
  * slower but produces the same notes.
  */
 
