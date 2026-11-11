@@ -11,7 +11,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  chooseSplitPoint,
   collapseRepeats,
   divideHands,
   limitRate,
@@ -62,10 +61,13 @@ test('the same key struck again is one note', () => {
 
   assert.equal(collapsed, 1);
   assert.equal(notes.length, 2);
-  // The folded note starts when the first strike did and ends when the last
-  // one did, so no of the sound is lost.
+  // The folded note starts when the first strike did, so the onset — the part
+  // the model gets right — does not move.
   assert.equal(notes[0].startTime, 0);
-  assert.ok(Math.abs(notes[0].duration - 0.81) < 1e-9);
+  // It lasts as long as the longest of the strikes it swallowed. It does not
+  // last until the last strike ended, because that made the fold a chain:
+  // a key struck every forty milliseconds became one note of seconds.
+  assert.ok(Math.abs(notes[0].duration - 0.5) < 1e-9);
   assert.equal(notes[1].startTime, 1.2);
 });
 
@@ -130,16 +132,80 @@ test('a note neither hand can take is dropped', () => {
   assert.ok(widestSpan(right) <= 12);
 });
 
-test('the split point is worked out from the material', () => {
-  const notes = [
-    ...[36, 40, 43].map((pitch) => note(pitch, 0)),
-    ...[72, 76, 79].map((pitch) => note(pitch, 0)),
-  ];
+test('the hands meet at middle C', () => {
+  // The grand staff splits at middle C, and the stage does too: the left
+  // hand plays below it and the right hand plays from it up.
+  const result = pianify([track([note(48, 0), note(60, 0), note(72, 0)])]);
 
-  const split = chooseSplitPoint(notes, 5, 12);
-  // The split has to fall between the bass and the melody, so that each
-  // hand gets one of them.
-  assert.ok(split > 43 && split <= 72, `the split landed at ${split}`);
+  assert.equal(result.stats.splitPoint, 60);
+  assert.deepEqual(result.tracks[0].notes.map((entry) => entry.pitchMidi), [48]);
+  assert.deepEqual(result.tracks[1].notes.map((entry) => entry.pitchMidi), [60, 72]);
+});
+
+test('the left hand does not reach into the treble', () => {
+  // A wide texture, the kind a mix produces. The hands meet at middle C and
+  // overlap by a third, the way they do on a grand staff, so the left hand
+  // may reach a little above the split — but not into the treble. The first
+  // version let it play up to 87.
+  const notes = [28, 40, 52, 59, 64, 72, 80, 88].map((pitch) => note(pitch, 0));
+  const result = pianify([track(notes)]);
+
+  const left = result.tracks[0].notes;
+  assert.ok(
+    left.every((entry) => entry.pitchMidi < 68),
+    `the left hand reached ${Math.max(...left.map((entry) => entry.pitchMidi))}`,
+  );
+  const right = result.tracks[1].notes;
+  assert.ok(
+    right.every((entry) => entry.pitchMidi >= 56),
+    `the right hand dropped to ${Math.min(...right.map((entry) => entry.pitchMidi))}`,
+  );
+});
+
+test('the melody of a chord is kept, not the note underneath it', () => {
+  // Six notes at once in the right hand's range. The hand has five fingers,
+  // so one note has to go, and it must be the lowest one: the top of a
+  // chord is the melody.
+  const notes = [64, 67, 71, 74, 79, 84].map((pitch) => note(pitch, 0, 0.4, 0.8));
+  const { right } = divideHands(notes, 60, 5, 12, 0);
+
+  assert.ok(right.length <= 5);
+  assert.ok(
+    right.some((entry) => entry.pitchMidi === 84),
+    'the top of the chord was dropped',
+  );
+  assert.ok(
+    !right.some((entry) => entry.pitchMidi === 64),
+    'the note under the chord was kept instead of the melody',
+  );
+});
+
+test('a note too short to play is lengthened', () => {
+  // One frame of the model, ten milliseconds. It is not a note.
+  const result = pianify([track([note(60, 0, 0.01)])]);
+
+  assert.ok(
+    result.tracks[1].notes[0].duration >= 0.06,
+    `the note was ${result.tracks[1].notes[0].duration} seconds long`,
+  );
+  // The onset does not move: that is the part the model gets right.
+  assert.equal(result.tracks[1].notes[0].startTime, 0);
+});
+
+test('a key struck again and again is still one note', () => {
+  // Twenty strikes, forty milliseconds apart, each one a model frame long.
+  // The fold is not allowed to run on: the note must not become the length
+  // of the whole run.
+  const notes = Array.from({ length: 20 }, (_, index) =>
+    note(60, index * 0.04, 0.01),
+  );
+  const { notes: folded } = collapseRepeats(notes, 0.05);
+
+  assert.equal(folded.length, 1);
+  assert.ok(
+    folded[0].duration <= 0.05,
+    `the note became ${folded[0].duration} seconds long`,
+  );
 });
 
 test('a hand does not play faster than it can', () => {

@@ -104,26 +104,53 @@ transcription time.
 
 `src/core/pianify.ts`. Four passes, in this order.
 
-**1. Collapse.** The same key struck again within 50 ms is one note, not two.
-The folded note starts when the first strike did and ends when the last one
-did, so none of the sound is lost, and it keeps the loudest of the strikes.
-A key cannot be re-struck that fast, so this is not a judgement call about
-the music — it is the instrument.
+**1. Collapse.** The same key struck again within 50 ms is one note, not two. A
+key cannot be re-struck that fast, so this is not a judgement call about the
+music — it is the instrument. The folded note starts when the first strike did,
+so the onset does not move, and it lasts as long as the longest of the strikes
+it swallowed.
+
+That last part matters more than it sounds. The first version made the folded
+note last until the *last* strike ended, and the fold was a chain: the merged
+note grew, so the next strike was measured against the longer note and folded
+in as well. A key struck every forty milliseconds for ten seconds became one
+note of ten seconds, and the output had notes of **seventeen seconds** in it.
+No piano has a note like that, and it is what a person looking at the piano
+roll would call unreasonable. The fold is now pairwise — each strike is judged
+against the strike before it — and the longest note in the output is the
+longest the model itself reported.
 
 **2. Divide.** The notes are split between a left and a right hand. The split
-point is not fixed at middle C: it is worked out from the material, as the
-pitch that leaves both hands least overstretched. Below the split is the
-left hand, which is playing the bass; above it is the right hand, which is
-playing the melody.
+is at **middle C**, which is where the grand staff splits: below it is the
+left hand, playing the bass, and from it up is the right hand, playing the
+melody. The hands overlap by a third, the way they do on a real keyboard.
 
-**3. Trim.** Each hand gets five notes at a time and an octave of reach.
-Notes that start together count as at the same moment. A note that arrives
-when its hand is full goes to the other hand if that hand can take it and
-the note is close enough to the split to be that hand's music; otherwise it
-is dropped.
+The split used to be worked out from the material — the point that left both
+hands least overstretched. It was measured, and it was wrong in a way that is
+obvious on the piano roll. This project's material is a mix, and the median of
+its texture sits at MIDI 57 to 76, well above middle C, so a split that
+balances the load lands in the treble. The left hand ended up playing the
+melody, up to **MIDI 87**, and the right hand played the bass, down to **46**.
+The two hands were the wrong way round.
 
-**4. Thin.** A hand plays at most ten notes a second. Where the
-transcription asks for more, the quietest notes go.
+**3. Trim.** Each hand gets five notes at a time and an octave of reach. Notes
+that start together count as at the same moment. Within a chord the right hand
+is given the top of it first and the left hand the bottom, because those are
+the notes the music is about: the melody on top, the bass underneath. When a
+hand is full, the note it gives up is then the one furthest from the line it
+is playing — the low note of a right-hand chord, rather than the melody above
+it. A note that arrives when its hand is full goes to the other hand if that
+hand can take it and the note is close enough to the split to be that hand's
+music; otherwise it is dropped.
+
+**4. Thin.** A hand plays at most ten notes a second. Where the transcription
+asks for more, the quietest notes go.
+
+Before the hands are divided, the notes that are too short to play are
+lengthened. A quarter of the model's notes are one frame long — ten
+milliseconds, which is a click and not a note — and the fastest staccato on a
+real piano is about sixty milliseconds. The onset is kept where it is, because
+that is the part the model gets right, and only the end moves.
 
 The rules are the constraints a piano has: ten fingers, five per hand, an
 octave of reach, and a finger that cannot move faster than about ten times a
@@ -140,20 +167,21 @@ thing to a right answer this project has, and the stage never looks at it.
 
 | | the model | arranged |
 |---|---|---|
-| notes per file | 2001 | 1047 |
-| notes a second | 11.1 | 5.8 |
-| the same key struck again | 708 | 34 |
+| notes per file | 2001 | 1008 |
+| notes a second | 11.1 | 5.6 |
+| the same key struck again | 708 | 58 |
 | notes struck at one moment, one hand | up to 11 | 5 |
 | the widest chord, one hand | 75 semitones | 12 |
 | notes in the busiest second, one hand | up to 60 | 10 |
-| of the model's notes, how many are real | 24.7 % | **29.8 %** |
-| of Okarina's notes, how many are found | 32.3 % | 19.9 % |
+| the longest note | 6.0 s | 6.0 s |
+| of the model's notes, how many are real | 24.7 % | **28.4 %** |
+| of Okarina's notes, how many are found | 32.3 % | 18.1 % |
 
 The last two lines are the point. The stage keeps half the notes, and the
-notes it keeps are a fifth more likely to be right than the ones it threw
+notes it keeps are a seventh more likely to be right than the ones it threw
 away. It is not deleting at random.
 
-The cost is in the line above it: 12.4 points of the reference are no longer
+The cost is in the line above it: 14.2 points of the reference are no longer
 found. That is a real loss and it is not hidden. A transcription that is
 supposed to be *right* and a transcription that is supposed to be *playable*
 are different products, and this stage trades the first for the second.
@@ -164,14 +192,37 @@ The numbers move with the settings, and the script sweeps them:
 |---|---|---|---|
 | untouched | 2001 | 11.1 | 26.6 % |
 | collapse only | 1349 | 7.5 | 24.3 % |
-| collapse, two hands | 1264 | 7.0 | 24.2 % |
-| collapse, two hands, 12 a second | 1131 | 6.3 | 23.8 % |
-| collapse, two hands, 10 a second | 1047 | 5.8 | 23.3 % |
-| collapse, two hands, 8 a second | 925 | 5.1 | 22.3 % |
+| collapse, two hands | 1235 | 6.8 | 22.6 % |
+| collapse, two hands, 12 a second | 1095 | 6.1 | 22.1 % |
+| collapse, two hands, 10 a second | 1008 | 5.6 | 21.6 % |
+| collapse, two hands, 8 a second | 886 | 4.9 | 20.4 % |
 
 Ten a second is about as fast as a hand plays. Eight costs a point of F1 for
 nothing, and twelve keeps a few more notes but sits at the very edge of what
 a hand can do, so the default is ten.
+
+### What the correction changed
+
+The stage shipped in 0.6.0 arranged the notes into the wrong hands, and
+looking at the piano roll is how it was found. `scripts/pianify-compare.mts`
+runs the shipped stage and the corrected one over the same material — the
+shipped one is read out of the git history, so it is the code that was
+actually shipped:
+
+| | shipped 0.6.0 | corrected |
+|---|---|---|
+| the highest note the left hand plays | **87** | 64 |
+| the lowest note the right hand plays | **46** | 56 |
+| notes of 20 ms or less | **27.0 %** | 0.0 % |
+| the longest note | **17.31 s** | 6.00 s |
+| the melody of a chord kept | 53.8 % | 53.9 % |
+| the bass kept | 56.3 % | 56.1 % |
+| notes | 1047 | 1008 |
+
+The left hand reaching MIDI 87 and the right hand down to 46 is the two hands
+playing each other's music. The quarter of the notes that were one model frame
+long is a click rather than a note. And the longest note is now the longest
+the model itself reported, rather than one the fold invented.
 
 ## What it does not do
 
@@ -183,13 +234,33 @@ a hand can do, so the default is ten.
 - **It does not snap to the beat.** The model's own onsets are better than
   the beat grid, and the grid this project has is the frame grid, which
   comes after.
-- **It does not touch the sustain.** Nineteen notes can still sound at once,
-  because a piano with the pedal down can do that. A file without pedal
+- **It does not touch the sustain.** Up to sixteen notes can still sound at
+  once, because a piano with the pedal down can do that. A file without pedal
   cannot, and trimming the durations to fit would be a bigger change than
   this stage is.
 - **It does not use a second model.** Agreement between models would be a
   better noise detector than loudness. It would also double the time of
   every conversion, which for a piano run is minutes.
+
+### The melody
+
+It is worth saying what the stage found about the melody, because it is a
+negative result. The right hand is meant to be playing it, and the melody of a
+chord is its top note — so the question is whether the stage keeps it.
+
+Measured over the material (`scripts/pianify-melody-keep.mts`), the top note
+of a chord survives in **53.9 %** of the chords. That is not a failure of the
+stage; it is the same number the model itself would score if you asked it to
+name the melody, because this material is a mix of four instruments and there
+is no melody in it for a model to find.
+
+A melody tracer was tried and measured (`scripts/pianify-melody.mts`): a
+Viterbi trace over the onsets moves by a step 0.8 % of the time against 0.3 %
+for the top-of-chord baseline, which is not smooth enough to be worth
+shipping. The source is a mix, not a piano, and the hand-separation models in
+the literature all need piano audio or a score. So the stage does not try to
+find the melody and put it in the right hand — it keeps the top of each chord,
+which is the melody when there is one.
 
 ## Where it sits
 
@@ -206,6 +277,36 @@ In the app the arrangement is a switch in the header. It is applied to the
 notes as they stand, so it can be turned on and off without transcribing
 again. It is a change to the notes rather than a view over them, because it
 changes what the tracks are: two hands instead of one.
+
+## The measurements
+
+Everything above was measured, and the scripts are in `scripts/`. They are
+kept because a number that cannot be reproduced is a claim, not a fact.
+
+| script | what it answers |
+|---|---|
+| `pianify-stats.mjs` | what the model's output looks like before the stage |
+| `pianify-value.mts` | whether the loudness head tells real notes from noise |
+| `pianify-experiment.mts` | playability and accuracy, and the sweep of the settings |
+| `pianify-compare.mts` | the shipped stage against the corrected one |
+| `pianify-pitch.mts` | where the music sits, per file |
+| `pianify-split.mts` | where the hands should meet |
+| `pianify-crossing.mts` | how far a note may cross to the other hand |
+| `pianify-melody-keep.mts` | whether the melody of a chord survives |
+| `pianify-order.mts` | the old note order against the new one |
+| `pianify-order-detail.mts` | the same, by chord width |
+| `pianify-duration.mts` | how long the notes are, and how many a hand holds |
+| `pianify-merge-sweep.mts` | the fold: the gap and how long a folded note is |
+| `pianify-long-notes.mts` | what is inside the long notes |
+| `pianify-fold-depth.mts` | the gap between one strike on a key and the next |
+| `pianify-look.mts` | the arrangement as a text piano roll |
+
+`pianify-look.mts` is the one that settles an argument. It prints the
+arrangement as a piano roll in the terminal — the left hand in one mark, the
+right hand in another, one column every fifty milliseconds — and it is how the
+wrong-handed arrangement of 0.6.0 was seen to be wrong. A table of averages
+says the hands were within their limits; the roll shows that the left hand
+was playing the treble.
 
 ## References
 

@@ -22,9 +22,9 @@
  *      fast, and the pitch content is kept exactly.
  *
  *   2. **Divide.** The notes that start together are a chord, and a chord is
- *      played by two hands. The split point is chosen from the material
- *      rather than fixed at middle C, because the music does not always put
- *      its bass below its melody.
+ *      played by two hands. The hands meet at middle C, which is where the
+ *      grand staff splits, and the notes either side of it go to the hand
+ *      they belong to.
  *
  *   3. **Trim.** Each hand gets at most five fingers and an octave of reach.
  *      Where a note does not fit, it goes to the other hand if that hand can
@@ -48,7 +48,49 @@ const CLUSTER_WINDOW = 0.025;
 /** The default gap below which two notes on one key are one note. */
 const DEFAULT_MERGE_GAP = 0.05;
 
+/**
+ * Where the left hand stops and the right hand starts.
+ *
+ * Middle C is the answer because it is the answer for a piano, not because it
+ * fitted this material best. The grand staff splits there: the bass clef goes
+ * to the left hand and the treble clef to the right.
+ *
+ * The first version worked the split out from the material instead, choosing
+ * the point that balanced the load between the hands. It was measured, and it
+ * was wrong in a way that is obvious on the piano roll: the median of this
+ * material's texture sits at MIDI 57 to 76, well above middle C, so a split
+ * that balances the load lands in the treble. The left hand ended up playing
+ * the melody up to MIDI 87 and the right hand played the bass down to 46.
+ */
+const DEFAULT_SPLIT_POINT = 60;
+
+/** The shortest note a hand can play, in seconds. */
+const DEFAULT_MIN_DURATION = 0.06;
+
+/**
+ * How far a note may cross to the other hand, in semitones.
+ *
+ * The hands meet at middle C and they overlap a little, the way they do on a
+ * grand staff: the right hand sometimes comes down below the split, the left
+ * hand sometimes reaches up over it. A third is the usual overlap.
+ *
+ * The first version allowed a note to cross an octave, and that is what put
+ * the melody into the left hand's track and the bass into the right hand's.
+ * At a third, about one note in fifty changes hands.
+ */
+const DEFAULT_MOVE_RANGE = 4;
+
 export interface PianifyOptions {
+  /**
+   * The shortest note a hand can play, in seconds.
+   *
+   * The piano model works in frames of ten milliseconds, so a quarter of the
+   * notes it reports are one frame long: a tenth of a second, which is a
+   * click and not a note. The fastest staccato on a real piano is about
+   * this long, so a note shorter than it is lengthened rather than kept as
+   * it is. Default 0.06, sixty milliseconds.
+   */
+  minDuration?: number;
   /**
    * Two notes on the same key, this close together, are one note.
    *
@@ -65,8 +107,7 @@ export interface PianifyOptions {
   /**
    * The MIDI note where the left hand stops and the right hand starts.
    *
-   * Left out, it is worked out from the material: the point that splits the
-   * notes most evenly while keeping both hands within their reach.
+   * Left out, it is middle C, which is where the grand staff splits.
    */
   splitPoint?: number;
   /**
@@ -75,7 +116,9 @@ export interface PianifyOptions {
    * When a hand is full, a note near the split can be played by the other
    * hand instead. One far away cannot: the left hand does not reach up to
    * the treble, and the right hand does not come down to the bass. Such a
-   * note is dropped. Default an octave.
+   * note is dropped.
+   *
+   * Default a third, which is the usual overlap on a grand staff.
    */
   moveRange?: number;
   /**
@@ -130,8 +173,9 @@ export function pianify(tracks: Track[], options: PianifyOptions = {}): PianifyR
   const maxPolyphony = options.maxPolyphony ?? 5;
   const maxSpan = options.maxSpan ?? 12;
   const maxRate = options.maxRate ?? 10;
-  const moveRange = options.moveRange ?? 12;
+  const moveRange = options.moveRange ?? DEFAULT_MOVE_RANGE;
   const splitHands = options.splitHands !== false;
+  const minDuration = options.minDuration ?? DEFAULT_MIN_DURATION;
 
   const pitched = tracks.filter((track) => track.kind !== 'drums');
   const others = tracks.filter((track) => track.kind === 'drums');
@@ -145,19 +189,26 @@ export function pianify(tracks: Track[], options: PianifyOptions = {}): PianifyR
   );
   const collapsed = collapsedNotes.collapsed;
 
-  // --- 2. Divide the chords between the hands -------------------------
-  const splitPoint =
-    options.splitPoint ?? chooseSplitPoint(collapsedNotes.notes, maxPolyphony, maxSpan);
+  // --- 2. Lengthen the notes that are too short to play -----------------
+  //
+  // A note of ten milliseconds is one frame of the model, not a note. It is
+  // lengthened rather than dropped: the onset is the part the model gets
+  // right, and a key that was struck does not stop sounding the instant the
+  // frame ends.
+  const lengthened = lengthenNotes(collapsedNotes.notes, minDuration);
+
+  // --- 3. Divide the chords between the hands -------------------------
+  const splitPoint = options.splitPoint ?? DEFAULT_SPLIT_POINT;
 
   const divided = divideHands(
-    collapsedNotes.notes,
+    lengthened,
     splitPoint,
     maxPolyphony,
     maxSpan,
     moveRange,
   );
 
-  // --- 3. Thin each hand to a human rate ------------------------------
+  // --- 4. Thin each hand to a human rate ------------------------------
   const left = limitRate(divided.left, maxRate);
   const right = limitRate(divided.right, maxRate);
 
@@ -204,9 +255,20 @@ export function pianify(tracks: Track[], options: PianifyOptions = {}): PianifyR
 /**
  * Fold notes that are the same key struck again into the note before them.
  *
- * The result keeps the first strike's start and the last strike's end, so
- * the note sounds for as long as the key was actually down, and it keeps the
- * loudest of the strikes, because that is the one the model was surest of.
+ * The result keeps the first strike's start, so the onset — the part the
+ * model gets right — does not move, and it keeps the loudest of the strikes,
+ * because that is the one the model was surest of.
+ *
+ * How long the folded note is, is the part that matters. The first version
+ * made it last until the last strike ended, and the fold was a chain: the
+ * merged note grew, so the next strike was measured against the longer note
+ * and folded in as well. A key struck every forty milliseconds for ten
+ * seconds became one note of ten seconds, and the output had notes of
+ * seventeen seconds in it. No piano has a note like that.
+ *
+ * So the fold is measured from the strike before it, and the folded note
+ * lasts as long as the longest of the strikes it swallowed. A note is never
+ * longer than the model said some single strike was.
  */
 export function collapseRepeats(
   notes: RawNote[],
@@ -226,20 +288,24 @@ export function collapseRepeats(
     list.sort((a, b) => a.startTime - b.startTime);
 
     let current: RawNote = { ...list[0] };
+    // The end of the strike before, not of the folded note and not the
+    // longest of them: the fold is a pairwise operation and cannot run on.
+    let previousEnd = current.startTime + current.duration;
+
     for (let i = 1; i < list.length; i++) {
       const next = list[i];
-      const currentEnd = current.startTime + current.duration;
-      if (next.startTime <= currentEnd + mergeGap) {
-        const end = Math.max(currentEnd, next.startTime + next.duration);
+      if (next.startTime <= previousEnd + mergeGap) {
         current = {
           ...current,
-          duration: end - current.startTime,
+          duration: Math.max(current.duration, next.duration),
           amplitude: Math.max(current.amplitude, next.amplitude),
         };
+        previousEnd = next.startTime + next.duration;
         collapsed += 1;
       } else {
         out.push(current);
         current = { ...next };
+        previousEnd = next.startTime + next.duration;
       }
     }
     out.push(current);
@@ -249,96 +315,40 @@ export function collapseRepeats(
 }
 
 /**
- * Work out where the left hand should stop.
+ * Lengthen the notes that are too short to be played.
  *
- * Every distinct pitch is tried as the split point, and each one is judged
- * on how badly it overflows the hands: how many notes one hand has to hold
- * at once, and how far it has to reach. The point that overflows least wins,
- * and a split that leaves the hands lopsided is a worse answer than one that
- * does not.
+ * The onset is kept where it is — it is the part the model gets right — and
+ * only the end moves, so the note lasts at least as long as a hand can
+ * play it.
  */
-export function chooseSplitPoint(
-  notes: RawNote[],
-  maxPolyphony: number,
-  maxSpan: number,
-): number {
-  if (notes.length === 0) return 60;
-
-  const pitches = [...new Set(notes.map((note) => note.pitchMidi))].sort((a, b) => a - b);
-  if (pitches.length < 2) return pitches[0];
-
-  let best = { point: 60, cost: Infinity, balance: Infinity };
-
-  for (const point of pitches) {
-    const low = notes.filter((note) => note.pitchMidi < point);
-    const high = notes.filter((note) => note.pitchMidi >= point);
-
-    const lowLimits = handLimits(low);
-    const highLimits = handLimits(high);
-    const worstCount = Math.max(lowLimits.count, highLimits.count);
-    const worstSpan = Math.max(lowLimits.span, highLimits.span);
-
-    const cost = worstCount / maxPolyphony + worstSpan / maxSpan;
-    const balance = Math.abs(low.length - high.length);
-    if (cost < best.cost - 1e-9 || (Math.abs(cost - best.cost) < 1e-9 && balance < best.balance)) {
-      best = { point, cost, balance };
-    }
-  }
-
-  return best.point;
-}
-
-/**
- * What a hand has to do: the most notes it plays at once, and the widest
- * reach it has to make.
- *
- * The notes are in time order, so the window of notes that count as "at the
- * same time" is walked with two pointers rather than searched for each note
- * in turn.
- */
-function handLimits(hand: RawNote[]): { count: number; span: number } {
-  let worstCount = 0;
-  let worstSpan = 0;
-  let low = 0;
-  let high = 0;
-
-  for (const note of hand) {
-    const time = note.startTime;
-    while (low < hand.length && hand[low].startTime < time - CLUSTER_WINDOW) low += 1;
-    while (high < hand.length && hand[high].startTime <= time + CLUSTER_WINDOW) high += 1;
-
-    if (high - low > worstCount) worstCount = high - low;
-
-    let lowest = Infinity;
-    let highest = -Infinity;
-    for (let i = low; i < high; i++) {
-      if (hand[i].pitchMidi < lowest) lowest = hand[i].pitchMidi;
-      if (hand[i].pitchMidi > highest) highest = hand[i].pitchMidi;
-    }
-    if (highest - lowest > worstSpan) worstSpan = highest - lowest;
-  }
-
-  return { count: worstCount, span: worstSpan };
+export function lengthenNotes(notes: RawNote[], minDuration: number): RawNote[] {
+  return notes.map((note) =>
+    note.duration >= minDuration
+      ? note
+      : { ...note, duration: minDuration },
+  );
 }
 
 /**
  * Divide the notes between two hands.
  *
- * Each hand can hold five notes at a time and reach an octave. The notes
- * that count as "at a time" are the ones that start within a few tens of
- * milliseconds of each other, and a hand is over its limit when the notes it
- * is playing then are too many, or reach too far.
+ * The notes that start together are a chord, and a chord is what a hand holds.
+ * The chords are taken one at a time, because a hand's limits are about the
+ * notes it is playing at one moment.
  *
- * The notes are placed in time order. Each one goes to the hand it belongs
- * to — the lower ones to the left hand, which is playing the bass, and the
- * higher ones to the right hand, which is playing the melody — unless that
- * hand cannot take it, in which case the other hand is tried, and if neither
- * can, the note is dropped.
+ * The low notes go to the left hand and the high ones to the right hand.
  *
- * Placing the notes one at a time, and checking the notes either side of the
- * new one as well, means the decision never depends on a note that has not
- * been placed yet, so the result does not depend on the order the notes are
- * considered in.
+ * Within a hand the order matters. The right hand is given the top of the
+ * chord first and the left hand the bottom, because those are the notes the
+ * music is about: the melody on top, the bass underneath. When a hand is
+ * full, the note it gives up is then the one furthest from the line it is
+ * playing — the low note of a right-hand chord, rather than the melody above
+ * it. The first version did the opposite, and it threw the melody away.
+ *
+ * A note that its own hand cannot take may be played by the other hand, but
+ * only if it is within `moveRange` semitones of the split: the left hand
+ * does not reach up into the treble and the right hand does not come down
+ * to the bass.
  */
 export function divideHands(
   notes: RawNote[],
@@ -351,24 +361,27 @@ export function divideHands(
   let dropped = 0;
   let moved = 0;
 
-  for (const note of sortByTime(notes)) {
-    const preferred = note.pitchMidi < splitPoint ? 0 : 1;
+  for (const chord of groupOnsets(sortByTime(notes), CLUSTER_WINDOW)) {
+    const high = chord
+      .filter((note) => note.pitchMidi >= splitPoint)
+      .sort((a, b) => b.pitchMidi - a.pitchMidi);
+    const low = chord
+      .filter((note) => note.pitchMidi < splitPoint)
+      .sort((a, b) => a.pitchMidi - b.pitchMidi);
 
-    // A note only goes to the other hand if it is close enough to the split
-    // to be that hand's music and not the other one's.
-    const handover =
-      moveRange > 0 && Math.abs(note.pitchMidi - splitPoint) <= moveRange;
-
-    let placed = false;
-    for (const hand of handover ? [preferred, 1 - preferred] : [preferred]) {
-      if (!canTake(hands[hand], note, maxPolyphony, maxSpan)) continue;
-      hands[hand].push(note);
-      placed = true;
-      if (hand !== preferred) moved += 1;
-      break;
+    // The right hand first: its melody notes are the ones worth a place, and
+    // the left hand's leftovers should not be able to take them.
+    for (const note of high) {
+      const hand = place(hands, note, 1, splitPoint, maxPolyphony, maxSpan, moveRange);
+      if (hand < 0) dropped += 1;
+      else if (hand !== 1) moved += 1;
     }
 
-    if (!placed) dropped += 1;
+    for (const note of low) {
+      const hand = place(hands, note, 0, splitPoint, maxPolyphony, maxSpan, moveRange);
+      if (hand < 0) dropped += 1;
+      else if (hand !== 0) moved += 1;
+    }
   }
 
   return {
@@ -377,6 +390,37 @@ export function divideHands(
     dropped,
     moved,
   };
+}
+
+/**
+ * Put a note in a hand, or in the other one if it is close enough to the
+ * split and that hand can take it.
+ *
+ * Returns the hand the note went to, or -1 if neither could take it.
+ */
+function place(
+  hands: RawNote[][],
+  note: RawNote,
+  preferred: number,
+  splitPoint: number,
+  maxPolyphony: number,
+  maxSpan: number,
+  moveRange: number,
+): number {
+  if (canTake(hands[preferred], note, maxPolyphony, maxSpan)) {
+    hands[preferred].push(note);
+    return preferred;
+  }
+
+  if (moveRange > 0 && Math.abs(note.pitchMidi - splitPoint) <= moveRange) {
+    const other = 1 - preferred;
+    if (canTake(hands[other], note, maxPolyphony, maxSpan)) {
+      hands[other].push(note);
+      return other;
+    }
+  }
+
+  return -1;
 }
 
 /**
@@ -490,6 +534,40 @@ export function limitRate(
   }
 
   return { notes: sortByTime(kept), dropped };
+}
+
+/**
+ * Group the notes that start together into chords.
+ *
+ * A chord is the notes that begin within a few tens of milliseconds of each
+ * other, which is what a hand has to hold at once. The grouping chains: two
+ * notes thirty milliseconds apart are in the same chord even if there is
+ * another note between them, because a player does not lift the hand in the
+ * middle of a chord.
+ *
+ * The window is the same one the limits are measured with, so that the code
+ * and the measurement are looking at the same chords.
+ */
+export function groupOnsets(notes: RawNote[], window: number): RawNote[][] {
+  const groups: RawNote[][] = [];
+  let current: RawNote[] = [];
+
+  for (const note of notes) {
+    if (current.length === 0) {
+      current.push(note);
+      continue;
+    }
+    const previous = current[current.length - 1];
+    if (note.startTime - previous.startTime <= window) {
+      current.push(note);
+      continue;
+    }
+    groups.push(current);
+    current = [note];
+  }
+  if (current.length > 0) groups.push(current);
+
+  return groups;
 }
 
 /** The most notes sounding at the same moment. */

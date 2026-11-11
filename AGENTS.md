@@ -27,7 +27,7 @@ The source lives in its own repository, `https://github.com/Gafail/voidtrackr`,
 which is public. The folder is `~/Desktop/AudiotoMidi/` — the name on disk is
 not the name of the tool, and the user asked for it to stay that way.
 
-The tool is complete and verified: 85 tests pass, the type check is clean, the
+The tool is complete and verified: 89 tests pass, the type check is clean, the
 production build succeeds, and the browser and the command line produce
 byte-identical MIDI for all five models.
 
@@ -51,10 +51,10 @@ model the default is.
 model's transcription is accurate and unplayable at the same time: the same
 key struck again within 60 ms is 35 % of all its notes, a chord can reach
 three octaves, and the busiest half second holds 41 notes. The pianify stage
-folds the re-triggers together, divides the chords between a left and a
-right hand, and drops what neither hand could hold. It keeps half the notes
-and the notes it keeps are a fifth more likely to be real. The research, the
-design and the cost are in `docs/pianify.md`.
+folds the re-triggers together, divides the chords between a left and a right
+hand at middle C, and drops what neither hand could hold. It keeps half the
+notes and the notes it keeps are a seventh more likely to be real. The
+research, the design and the cost are in `docs/pianify.md`.
 
 ## Architecture
 
@@ -152,6 +152,18 @@ scripts/
   pianify-stats.mjs     how far a transcription is from something playable
   pianify-value.mts     whether the model's loudness says a note is real
   pianify-experiment.mts  the stage, measured: playability against accuracy
+  pianify-compare.mts   the shipped stage against the corrected one
+  pianify-pitch.mts     where the music sits, per file
+  pianify-split.mts     where the hands should meet
+  pianify-crossing.mts  how far a note may cross to the other hand
+  pianify-melody-keep.mts  whether the melody of a chord survives
+  pianify-order.mts     the old note order against the new one
+  pianify-order-detail.mts  the same, by chord width
+  pianify-duration.mts  how long the notes are, and how many a hand holds
+  pianify-merge-sweep.mts  the fold: the gap and how long a folded note is
+  pianify-fold-depth.mts  the gap between one strike on a key and the next
+  pianify-long-notes.mts  what is inside the long notes
+  pianify-look.mts      the arrangement as a text piano roll
 
 docs/model-research.md   the survey of every model, and what was measured
 docs/pianify.md          the arrangement stage: the research, the design, the cost
@@ -196,7 +208,7 @@ Before calling any change done:
 
 ```bash
 npm run typecheck
-npm test                              # 85 tests
+npm test                              # 89 tests
 npm run check:reproducibility
 ```
 
@@ -355,6 +367,34 @@ npm run check:reproducibility
   to break ties and nothing more. The alternative — agreement between
   models — would be a better noise detector and would double the time of
   every conversion.
+- **The split between the hands is middle C, and it is not a parameter to
+  tune.** The first version worked it out from the material, choosing the
+  pitch that left the hands least overstretched. That rule is wrong on a mix:
+  the median of the texture sits at MIDI 57 to 76, well above middle C, so a
+  split that balances the load lands in the treble. The left hand then played
+  the melody up to MIDI 87 and the right hand played the bass down to 46 — the
+  two hands playing each other's music. Middle C is where the grand staff
+  splits, and it is the answer because it is the answer for a piano, not
+  because it fitted this material best. `scripts/pianify-pitch.mts` prints
+  where each file's music sits; `scripts/pianify-split.mts` sweeps the rules.
+- **The fold of a re-trigger must not chain.** The first version made a folded
+  note last until the *last* strike ended, and measured the gap against the
+  *merged* note, so a key struck every forty milliseconds for ten seconds
+  became one note of ten seconds. The output had notes of seventeen seconds in
+  it and the raw model has none over six. The fold is pairwise now — each
+  strike is judged against the strike before it — and a folded note lasts as
+  long as the longest strike it swallowed, so it can never be longer than the
+  model said some single note was. `scripts/pianify-merge-sweep.mts` sweeps
+  the gap and the two rules; `scripts/pianify-long-notes.mts` shows what is
+  inside the long ones.
+- **Within a chord, the melody is placed first.** The order the notes of a
+  chord are offered to a hand decides which one is dropped when the hand is
+  full. Ascending by pitch — the order the model produces them in — hands the
+  right hand the bottom of the treble and drops the melody on top of it. The
+  right hand is given the top of the chord first and the left hand the
+  bottom, because those are the notes the music is about. Measured over the
+  user's 19 tracks, this raises the share of chords whose melody survives
+  from 49.7 % to 52.6 % at the same note count.
 - **The arrangement changes the notes, so it is not a view over them.**
   Unlike the range and the grid, the pianify stage changes what the tracks
   are: two hands instead of one. The app therefore keeps the notes it
@@ -414,11 +454,16 @@ npm run check:reproducibility
 - **SSH:** the container's host keys were regenerated on provisioning — the
   clone had inherited the template's identity. The old ones are in
   `/root/.trash-removed/` on the box.
-- **Current pipeline version:** 0.6.0 (`src/core/version.ts`) — the pianify
-  stage was added: the notes are arranged for two hands, the re-triggers are
-  folded together, the chords are divided between a left and a right hand,
-  and what neither hand could hold is dropped. It came after the frequency
-  range and the grid, and it runs before the grid. A conversion that does not
+- **Current pipeline version:** 0.7.0 (`src/core/version.ts`) — the pianify
+  stage was added in 0.6.0 and corrected here. The stage as it shipped put the
+  notes in the wrong hands: it worked the split point out from the material,
+  which on a mix lands in the treble, so the left hand played the melody up to
+  MIDI 87 and the right hand played the bass down to 46. The split is at
+  middle C now, the fold of a re-trigger no longer chains (it made notes of
+  seventeen seconds out of strikes of ten milliseconds), notes shorter than
+  sixty milliseconds are lengthened, and the notes of a chord are placed
+  melody first so the top of a chord survives. The stage runs after the
+  frequency range and the grid, and before the grid. A conversion that does not
   ask for it produces the same notes as 0.5.0. The default model is still
   ByteDance's piano model, which was chosen after all five were measured
   over the user's own 19 tracks.

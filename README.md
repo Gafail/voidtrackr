@@ -201,11 +201,11 @@ do not start with the recording.
 The **Pianify** switch arranges the notes for two hands. A transcription has
 no hands in it: the same key can be struck twice in a row, a chord can reach
 three octaves, and a half second can hold forty notes. Pianify folds the
-re-triggers together, divides the chords between a left and a right hand,
-and drops what neither hand could hold — five notes a hand, an octave of
-reach, ten notes a second. It is applied to the notes as they stand, so it
-can be turned on and off without transcribing again. What it costs and what
-it buys is in [`docs/pianify.md`](docs/pianify.md).
+re-triggers together, divides the chords between a left and a right hand at
+middle C, and drops what neither hand could hold — five notes a hand, an
+octave of reach, ten notes a second. It is applied to the notes as they
+stand, so it can be turned on and off without transcribing again. What it
+costs and what it buys is in [`docs/pianify.md`](docs/pianify.md).
 
 ### On the command line
 

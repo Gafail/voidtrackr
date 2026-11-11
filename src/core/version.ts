@@ -48,8 +48,21 @@
  * a right hand, and what neither hand could hold is dropped. A conversion
  * that does not ask for it produces the same notes as before, so only the
  * stamp changes. See `docs/pianify.md`.
+ *
+ * 0.7.0 corrected the arrangement. The 0.6.0 stage put the notes in the
+ * wrong hands: it worked the split point out from the material, which on a
+ * mix lands in the treble, so the left hand played the melody up to MIDI 87
+ * and the right hand played the bass down to 46. The split is at middle C
+ * now, where the grand staff splits. The fold of a re-trigger was also a
+ * chain, which made notes of seventeen seconds out of strikes of ten
+ * milliseconds; it is pairwise now, and a folded note is never longer than
+ * the longest strike it swallowed. Notes shorter than sixty milliseconds are
+ * lengthened, and the notes of a chord are placed melody first, so the top
+ * of a chord is the note that survives. A conversion that does not ask for
+ * the arrangement produces the same notes as before, so only the stamp
+ * changes.
  */
-export const PIPELINE_VERSION = '0.6.0';
+export const PIPELINE_VERSION = '0.7.0';
 
 /** Where the weights came from, for the record. */
 export const MODEL_SOURCE =
