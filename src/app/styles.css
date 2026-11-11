@@ -522,6 +522,43 @@ code {
   text-overflow: ellipsis;
 }
 
+/* Pianify: arrange the notes for two hands. It is a switch rather than a
+   number, because the arrangement either is there or it is not. */
+.pianify-picker {
+  margin-bottom: 0;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.pianify-picker > span {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.pianify-picker input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.pianify-picker input[type='checkbox']:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.pianify-picker em {
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* The licence of the chosen model. It is the one thing on this page that
    decides whether the output can be sold, so it is coloured rather than
    left as grey text. */

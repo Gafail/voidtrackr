@@ -5,6 +5,7 @@
  * it can track a note through edits, and a per-track mute state.
  */
 
+import { pianify } from '@core/pianify';
 import { RawNote, Track, TrackKind } from '@core/types';
 
 export interface EditorNote {
@@ -82,6 +83,19 @@ export function fromEditorTracks(tracks: EditorTrack[]): Track[] {
       }),
     ),
   }));
+}
+
+/**
+ * Arrange the notes for two hands.
+ *
+ * The notes go into the pipeline's notes, the pipeline folds the
+ * re-triggers together and divides the chords between a left and a right
+ * hand, and they come back as editor tracks. The drum kit is left out of it:
+ * a drum is struck with a stick, not with a finger on a key.
+ */
+export function arrangeTracks(tracks: EditorTrack[]): EditorTrack[] {
+  const arranged = pianify(fromEditorTracks(tracks));
+  return toEditorTracks(arranged.tracks);
 }
 
 /** The lowest and highest note in a set of tracks. */

@@ -27,6 +27,9 @@ npm run dev       # http://127.0.0.1:5173
   from nothing at all to everything the keyboard holds.
 - **Snaps the notes to a grid** — so they land on the frames of a screen that
   renders at a fixed rate.
+- **Arranges the notes for two hands** — the re-triggers folded together, the
+  chords divided between a left and a right hand, and nothing a hand could
+  not hold.
 - **Exports multi-track MIDI** — SMF format 1, one track per part.
 
 A single-shot transcription is missing most of that, so it is added around the
@@ -195,6 +198,15 @@ better off agreeing with the frames than being more precise than the screen.
 The second box shifts the grid, in milliseconds, for when the screen's frames
 do not start with the recording.
 
+The **Pianify** switch arranges the notes for two hands. A transcription has
+no hands in it: the same key can be struck twice in a row, a chord can reach
+three octaves, and a half second can hold forty notes. Pianify folds the
+re-triggers together, divides the chords between a left and a right hand,
+and drops what neither hand could hold — five notes a hand, an octave of
+reach, ten notes a second. It is applied to the notes as they stand, so it
+can be turned on and off without transcribing again. What it costs and what
+it buys is in [`docs/pianify.md`](docs/pianify.md).
+
 ### On the command line
 
 ```bash
@@ -207,6 +219,7 @@ npm run cli -- song.mp3 -o out/ --model okarina
 npm run cli -- song.mp3 -o out/ --range 400      # everything below 400 Hz
 npm run cli -- song.mp3 -o out/ --range 100-1200 # between 100 and 1200 Hz
 npm run cli -- song.mp3 -o out/ --quantize 30    # on a 30 FPS grid
+npm run cli -- song.mp3 -o out/ --pianify        # arranged for two hands
 npm run cli -- --list-models
 ```
 

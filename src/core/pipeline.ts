@@ -21,6 +21,7 @@ import { describeRange, filterByRange, FrequencyRange } from './range';
 import { correctTuning } from './tuning';
 import { estimateKey, estimateTempo } from './tempo';
 import { describeQuantise, quantiseNotes, QuantiseOptions } from './quantise';
+import { pianify, PianifyOptions } from './pianify';
 import { KeyInfo, ProgressInfo, TempoInfo, Track, TranscriptionResult } from './types';
 
 export interface TranscribeOptions {
@@ -52,6 +53,19 @@ export interface TranscribeOptions {
    * before this, from the notes as the model found them.
    */
   quantise?: QuantiseOptions;
+  /**
+   * Arrange the notes for two hands, the way a player would.
+   *
+   * A transcription has no hands in it: it can report twenty notes sounding
+   * at once and the same key struck twice in a row. This stage folds the
+   * re-triggers together, divides the chords between a left and a right
+   * hand, and drops what neither hand could hold. See `pianify.ts`.
+   *
+   * It runs on the notes the model found, before the range, because the
+   * arrangement is a decision about the whole piece, and before the grid, so
+   * the grid places the arranged notes.
+   */
+  pianify?: PianifyOptions;
 }
 
 /**
@@ -143,11 +157,27 @@ export async function transcribe(
     }
   }
 
+  // --- The two hands ----------------------------------------------------
+  //
+  // This runs on the notes the model found, before the range, because the
+  // arrangement is a decision about the whole piece: the split between the
+  // hands and the notes that are dropped depend on the music as a whole. The
+  // range then chooses from the arranged notes.
+  //
+  // The tempo and the key were estimated earlier, from the notes as the
+  // model found them: they belong to the song, not to the arrangement.
+  if (options.pianify) {
+    const arranged = pianify(tracks, options.pianify);
+    tracks.length = 0;
+    tracks.push(...arranged.tracks);
+    log.push(arranged.log);
+  }
+
   // --- The frequency range ---------------------------------------------
   //
-  // This runs last, on the notes the model found. Filtering the audio
-  // instead would be much worse: a model reads a note from its harmonic
-  // series, and cutting the audio takes that evidence away. See `range.ts`.
+  // This runs on the notes, not on the audio. Filtering the audio instead
+  // would be much worse: a model reads a note from its harmonic series, and
+  // cutting the audio takes that evidence away. See `range.ts`.
   if (options.range) {
     const before = tracks.reduce((sum, track) => sum + track.notes.length, 0);
     for (const track of tracks) {

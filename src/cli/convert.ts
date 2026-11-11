@@ -49,6 +49,7 @@ import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from '../core/piano';
 import pianoLock from '../core/piano.lock.json';
 import { FrequencyRange } from '../core/range';
 import { QuantiseOptions } from '../core/quantise';
+import { PianifyOptions } from '../core/pianify';
 import { TsumugiModel, TSUMUGI_DIR, TSUMUGI_FILES } from '../core/tsumugi';
 import tsumugiLock from '../core/tsumugi.lock.json';
 import { YourMt3Model, YOURMT3_DIR, YOURMT3_FILES } from '../core/yourmt3';
@@ -81,6 +82,8 @@ interface CliOptions {
   range?: FrequencyRange;
   /** Snap the notes to a grid of this many slots per second. */
   quantise?: QuantiseOptions;
+  /** Arrange the notes for two hands. */
+  pianify?: PianifyOptions;
   json: boolean;
   quiet: boolean;
 }
@@ -177,6 +180,14 @@ function parseArgs(argv: string[]): CliOptions {
         options.quantise = { grid: value, phase: 0 };
         break;
       }
+      case '--pianify': {
+        options.pianify = {};
+        break;
+      }
+      case '--no-pianify': {
+        options.pianify = undefined;
+        break;
+      }
       case '--phase': {
         const value = Number(argv[++i]);
         if (!Number.isFinite(value)) {
@@ -239,6 +250,9 @@ Options:
       --quantize <hz>        Snap the notes to a grid of this many slots per second.
                             --quantize 30 lines the notes up with a 30 FPS screen.
       --phase <ms>           Where the first slot sits, in milliseconds.
+      --pianify              Arrange the notes for two hands: fold the re-triggers
+                            together, divide the chords between the hands, and drop
+                            what neither hand could hold.
       --json                Print results as JSON
   -l, --list-models         List the models and their licences
   -q, --quiet               Only print errors
@@ -393,6 +407,7 @@ async function convertFile(
     forceTempo: Number.isFinite(options.tempo) ? options.tempo : undefined,
     range: options.range,
     quantise: options.quantise,
+    pianify: options.pianify,
     onProgress: options.quiet
       ? undefined
       : (info) => {

@@ -34,7 +34,7 @@ import {
 import { describeQuantise, quantiseSpan } from '@core/quantise';
 import { KeyInfo, TempoInfo } from '@core/types';
 import { PianoRoll } from './PianoRoll';
-import { EditorTrack, fromEditorTracks, toEditorTracks } from './editor';
+import { EditorTrack, arrangeTracks, fromEditorTracks, toEditorTracks } from './editor';
 import { Player } from './playback';
 
 const MODEL_URL = '/model/model.json';
@@ -250,6 +250,19 @@ export function App() {
   const [phase, setPhase] = useState(0);
 
   /**
+   * Whether the notes have been arranged for two hands.
+   *
+   * The arrangement folds the re-triggers together, divides the chords
+   * between a left and a right hand, and drops what neither hand could
+   * hold. It is applied to the notes as they stand, so it can be turned on
+   * and off without transcribing again: a piano run takes minutes.
+   */
+  const [arranged, setArranged] = useState(false);
+
+  /** The notes as they were before the arrangement, so it can be undone. */
+  const arrangedRef = useRef<EditorTrack[] | null>(null);
+
+  /**
    * The tracks as they are shown, played and exported: only the notes inside
    * the range, and snapped to the grid if one is set.
    *
@@ -419,6 +432,8 @@ export function App() {
         });
 
         setTracks(toEditorTracks(result.tracks));
+        setArranged(false);
+        arrangedRef.current = null;
         setTempo(result.tempo.bpm);
         setKey(result.key);
         setDuration(result.duration);
@@ -450,6 +465,27 @@ export function App() {
       ...track,
       notes: track.notes.map((note) => ({ ...note })),
     }));
+
+  /**
+   * Arrange the notes for two hands, or put them back as they were.
+   *
+   * The arrangement is a change to the notes themselves rather than a view
+   * over them, because it changes what the tracks are: two hands instead of
+   * one. The notes it started from are kept, so the switch can be undone.
+   */
+  const toggleArranged = useCallback(() => {
+    if (arranged) {
+      const before = arrangedRef.current;
+      arrangedRef.current = null;
+      setArranged(false);
+      if (before) setTracks(before);
+    } else {
+      arrangedRef.current = copyTracks(tracks);
+      setTracks(arrangeTracks(tracks));
+      setArranged(true);
+    }
+    setSelected(new Set());
+  }, [arranged, tracks]);
 
   /**
    * Called once when an edit starts, so undo has the state before it.
@@ -608,6 +644,15 @@ export function App() {
     [visibleTracks],
   );
 
+  /** How many notes the arrangement left. The drum kit is not part of it. */
+  const arrangedNotes = useMemo(
+    () =>
+      tracks
+        .filter((track) => track.kind !== 'drums')
+        .reduce((total, track) => total + track.notes.length, 0),
+    [tracks],
+  );
+
   // --- Render ----------------------------------------------------------
 
   return (
@@ -709,6 +754,18 @@ export function App() {
               aria-label="Highest frequency to keep, in hertz"
             />
             <em>{describeRange(range)}</em>
+          </label>
+          <label className="field pianify-picker">
+            <span>Pianify</span>
+            <input
+              type="checkbox"
+              checked={arranged}
+              onChange={toggleArranged}
+              disabled={status === 'working' || tracks.length === 0}
+              aria-label="Arrange the notes for two hands"
+              title="Fold the re-triggers together, divide the chords between a left and a right hand, and drop what neither hand could hold."
+            />
+            <em>{arranged ? `${arrangedNotes} notes` : 'two hands'}</em>
           </label>
           <label className="field grid-picker">
             <span>Grid</span>

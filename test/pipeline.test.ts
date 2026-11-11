@@ -324,6 +324,76 @@ test('the grid does not change the tempo', async () => {
   assert.equal(snapped.tempo.bpm, result.tempo.bpm);
 });
 
+// --- The two hands -----------------------------------------------------
+//
+// A transcription has no hands in it. The stage gives it two.
+
+test('the arrangement gives the notes two hands', async () => {
+  const arranged = await transcribe(samples, { model, pianify: {} });
+
+  const hands = arranged.tracks.filter((track) => track.kind !== 'drums');
+  assert.equal(hands.length, 2, 'the notes were not divided between two hands');
+  assert.ok(hands[0].notes.length > 0, 'the left hand was empty');
+  assert.ok(hands[1].notes.length > 0, 'the right hand was empty');
+});
+
+test('the arrangement leaves the drums alone', async () => {
+  const arranged = await transcribe(samples, { model, pianify: {} });
+
+  const drums = arranged.tracks.find((track) => track.kind === 'drums');
+  const original = result.tracks.find((track) => track.kind === 'drums');
+  assert.ok(drums && original, 'the drum kit went missing');
+  assert.equal(drums.notes.length, original.notes.length);
+});
+
+test('the arrangement keeps every note it was given', async () => {
+  const arranged = await transcribe(samples, { model, pianify: {} });
+
+  // Every note in the arrangement has to be a note the model found: the
+  // stage divides and folds, it does not invent.
+  const original = result.tracks
+    .filter((track) => track.kind !== 'drums')
+    .flatMap((track) => track.notes);
+
+  for (const track of arranged.tracks) {
+    if (track.kind === 'drums') continue;
+    for (const note of track.notes) {
+      const near = original.some(
+        (candidate) =>
+          candidate.pitchMidi === note.pitchMidi &&
+          Math.abs(candidate.startTime - note.startTime) < 0.001,
+      );
+      assert.ok(near, `the arrangement invented a note at ${note.pitchMidi}`);
+    }
+  }
+});
+
+test('the arrangement does not change the tempo or the key', async () => {
+  const arranged = await transcribe(samples, { model, pianify: {} });
+  assert.equal(arranged.tempo.bpm, result.tempo.bpm);
+  assert.equal(arranged.key.tonic, result.key.tonic);
+  assert.equal(arranged.key.mode, result.key.mode);
+});
+
+test('the arrangement runs before the grid', async () => {
+  const arranged = await transcribe(samples, {
+    model,
+    pianify: {},
+    quantise: { grid: 30 },
+  });
+
+  const period = 1 / 30;
+  for (const track of arranged.tracks) {
+    for (const note of track.notes) {
+      const slots = note.startTime / period;
+      assert.ok(
+        Math.abs(slots - Math.round(slots)) < 1e-6,
+        `a note at ${note.startTime.toFixed(4)}s is not on a slot`,
+      );
+    }
+  }
+});
+
 // --- Reproducibility ---------------------------------------------------
 
 test('produces byte-identical MIDI on a repeat run', async () => {

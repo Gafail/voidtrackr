@@ -42,8 +42,14 @@
  * the same notes as before, so only the stamp changes. The range is applied
  * to the notes rather than to the audio, because filtering the audio was
  * measured and it is much worse — see `docs/model-research.md`, section 6.
+ *
+ * 0.6.0 added the pianify stage: the notes are arranged for two hands, the
+ * re-triggers are folded together, the chords are divided between a left and
+ * a right hand, and what neither hand could hold is dropped. A conversion
+ * that does not ask for it produces the same notes as before, so only the
+ * stamp changes. See `docs/pianify.md`.
  */
-export const PIPELINE_VERSION = '0.5.0';
+export const PIPELINE_VERSION = '0.6.0';
 
 /** Where the weights came from, for the record. */
 export const MODEL_SOURCE =

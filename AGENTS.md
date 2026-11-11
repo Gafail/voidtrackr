@@ -27,7 +27,7 @@ The source lives in its own repository, `https://github.com/Gafail/voidtrackr`,
 which is public. The folder is `~/Desktop/AudiotoMidi/` — the name on disk is
 not the name of the tool, and the user asked for it to stay that way.
 
-The tool is complete and verified: 41 tests pass, the type check is clean, the
+The tool is complete and verified: 85 tests pass, the type check is clean, the
 production build succeeds, and the browser and the command line produce
 byte-identical MIDI for all five models.
 
@@ -46,6 +46,15 @@ The numbers are in `docs/model-research.md` section 6, and the report is
 Flipping the default is one line: `DEFAULT_MODEL` in `src/core/registry.ts`.
 `npm run model` follows it, so the fetch script never has to be told which
 model the default is.
+
+**The output is arranged for two hands by an optional stage.** The piano
+model's transcription is accurate and unplayable at the same time: the same
+key struck again within 60 ms is 35 % of all its notes, a chord can reach
+three octaves, and the busiest half second holds 41 notes. The pianify stage
+folds the re-triggers together, divides the chords between a left and a
+right hand, and drops what neither hand could hold. It keeps half the notes
+and the notes it keeps are a fifth more likely to be real. The research, the
+design and the cost are in `docs/pianify.md`.
 
 ## Architecture
 
@@ -105,6 +114,7 @@ src/core/     the pipeline — no DOM, no Node specifics, runs in both
   notes.ts        note naming and the shared note helpers
   range.ts        the frequency range: which notes to keep
   quantise.ts     the grid: snapping notes to a fixed rate
+  pianify.ts      the arrangement for two hands: collapse, divide, trim, thin
   types.ts        the shared data types
   sha256.ts       the pure-JavaScript SHA-256 fallback
   midi.ts         the MIDI writer, including the key-signature fix
@@ -139,9 +149,14 @@ scripts/
   evaluate-midi.mjs      score one MIDI file against another
   evaluate-folder.mts    transcribe a folder, write eval/report.json + eval/index.html
   stamp-eval-midi.mts   add the provenance stamp to the evaluation's MIDI files
+  pianify-stats.mjs     how far a transcription is from something playable
+  pianify-value.mts     whether the model's loudness says a note is real
+  pianify-experiment.mts  the stage, measured: playability against accuracy
 
 docs/model-research.md   the survey of every model, and what was measured
+docs/pianify.md          the arrangement stage: the research, the design, the cost
 test/                    pipeline.test.ts, models.test.ts, sha256.test.ts, onnx-models.test.ts
+                         range.test.ts, quantise.test.ts, pianify.test.ts
 public/                  404.html and robots.txt, copied into the build
 eval/                    generated folder report (gitignored)
 models/onnx/             the Okarina weights (gitignored)
@@ -181,7 +196,7 @@ Before calling any change done:
 
 ```bash
 npm run typecheck
-npm test                              # 41 tests
+npm test                              # 85 tests
 npm run check:reproducibility
 ```
 
@@ -315,6 +330,42 @@ npm run check:reproducibility
   notes as the model found them. A MIDI file stores ticks rather than
   seconds, so a phase lands on the nearest tick — 1.04 ms at 480 PPQ and
   120 BPM — and the spacing between the slots is exact.
+- **Playability is a property of the notes together, not of one note.**
+  This is the whole idea behind `src/core/pianify.ts`, and it is the idea
+  behind the checklist models for piano fingering (Srivatsan &
+  Berg-Kirkpatrick, ISMIR 2022, arXiv 2209.05622): per-note accuracy does
+  not measure whether a piece can be played. A note that is right can still
+  be one of eleven sounding at once. The limits the stage enforces are five
+  notes a hand at a time, twelve semitones of reach and ten notes a second
+  a hand, and changing any of them changes the output.
+- **"At the same time" has to mean the same thing in the code and in the
+  measurement.** The stage works in a window of 25 milliseconds either side
+  of a note, and `scripts/pianify-experiment.mts` measures the same window.
+  An earlier version clustered the notes of the whole piece and split each
+  cluster, which let a hand hide a note outside its reach behind the other
+  hand's note, and the repair that moved notes between the hands ping-ponged
+  — 852 moves in a file with 790 notes in it. Both were fixed by placing the
+  notes one at a time against a symmetric window, which cannot oscillate.
+  If you change the window, change it in `pianify.ts` and in the experiment
+  together, or the numbers will not mean anything.
+- **The loudness head is a weak signal, and it is only used as a tie.**
+  Over the user's 19 tracks, the notes another model also found have a mean
+  velocity of 0.689 and the ones only the piano model found have 0.662. That
+  is not enough to tell a real note from a false one, so the stage uses it
+  to break ties and nothing more. The alternative — agreement between
+  models — would be a better noise detector and would double the time of
+  every conversion.
+- **The arrangement changes the notes, so it is not a view over them.**
+  Unlike the range and the grid, the pianify stage changes what the tracks
+  are: two hands instead of one. The app therefore keeps the notes it
+  started from and puts them back when the switch is turned off, which
+  means edits made while the arrangement is on are lost when it is turned
+  off. Do not "fix" that by making it a view; the merge-back works on note
+  ids, and the arrangement makes new notes.
+- **The arrangement does not touch the sustain.** Up to nineteen notes can
+  still sound at once, because a piano with the pedal down can do that. A
+  file without pedal cannot, and trimming the durations to fit would be a
+  bigger change than this stage is.
 - **Do not use `pkill -f "vite --port 5173"` to stop the dev server.** The
   pattern matches the shell running the command. Use `ps aux | grep "[v]ite"`
   and kill by PID.
@@ -363,12 +414,14 @@ npm run check:reproducibility
 - **SSH:** the container's host keys were regenerated on provisioning — the
   clone had inherited the template's identity. The old ones are in
   `/root/.trash-removed/` on the box.
-- **Current pipeline version:** 0.5.0 (`src/core/version.ts`) — the frequency
-  range was added: two bounds in hertz that choose which notes are kept, and
-  the grid: a fixed number of slots per second that the notes are snapped to.
-  A conversion that does not ask for either produces the same notes as 0.4.0.
-  The default model is still ByteDance's piano model, which was chosen after
-  all five were measured over the user's own 19 tracks.
+- **Current pipeline version:** 0.6.0 (`src/core/version.ts`) — the pianify
+  stage was added: the notes are arranged for two hands, the re-triggers are
+  folded together, the chords are divided between a left and a right hand,
+  and what neither hand could hold is dropped. It came after the frequency
+  range and the grid, and it runs before the grid. A conversion that does not
+  ask for it produces the same notes as 0.5.0. The default model is still
+  ByteDance's piano model, which was chosen after all five were measured
+  over the user's own 19 tracks.
 - **Models in the catalogue:** Piano Transcription (CC BY 4.0, the default),
   Basic Pitch (Apache-2.0), Tsumugi (MIT), YourMT3+ (Apache-2.0),
   Okarina (CC BY-NC-SA 4.0, non-commercial).
