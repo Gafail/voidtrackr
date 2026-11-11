@@ -237,12 +237,36 @@ npm run cli -- --list-models
 
 Full reference: `npm run cli -- --help`.
 
+### Over HTTP
+
+The site has an address you can call. The box runs a small service
+alongside it, at the same origin, and it does the same work through the
+same code — so the file it gives you is byte-identical to the one the
+command line gives you.
+
+```bash
+curl -F file=@song.wav http://192.168.100.109/api/convert -o song.mid
+curl -F file=@song.wav -F model=okarina -F pianify=true \
+     http://192.168.100.109/api/convert -o song.mid
+curl -F file=@song.wav -F format=json http://192.168.100.109/api/convert
+```
+
+There is a page about it at `/api/`, an OpenAPI document at
+`/api/openapi.json`, and the whole thing is in
+[`docs/api.md`](docs/api.md).
+
+One thing to be plain about: in the browser the audio never leaves your
+machine, and that has not changed. Through the API it goes to the box,
+which is on your own network. Nothing in the site calls the API.
+
 ## Commands
 
 | | |
 |---|---|
 | `npm run dev` | the app on `127.0.0.1:5173` |
 | `npm run build` | typecheck and build for production into `dist/` |
+| `npm run build:api` | bundle the API server into `dist-api/` |
+| `npm run api` | run the API server on `127.0.0.1:8787` |
 | `npm run preview` | serve `dist/` on `127.0.0.1:4173` |
 | `npm run model` | fetch and verify the default model's weights |
 | `npm run model:piano` | fetch and verify the Piano Transcription weights |

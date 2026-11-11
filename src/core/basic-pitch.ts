@@ -75,9 +75,13 @@ export class BasicPitchGraph {
   private constructor(private readonly model: tf.GraphModel) {}
 
   /** Load the graph model. `modelUrl` may point at a local directory served by
-   * the dev server, a file:// URL, or a remote host. */
-  static async load(modelUrl: string): Promise<BasicPitchGraph> {
-    const model = await tf.loadGraphModel(modelUrl);
+   * the dev server, a file:// URL, or a remote host.
+   *
+   *  `fetch` is used to get the manifest and the weight shards. It is needed
+   *  for a `file://` URL on a Node without the native TensorFlow.js backend,
+   *  because Node's own fetch does not understand that scheme. */
+  static async load(modelUrl: string, fetchFunc?: typeof fetch): Promise<BasicPitchGraph> {
+    const model = await tf.loadGraphModel(modelUrl, { fetchFunc });
     return new BasicPitchGraph(model);
   }
 
@@ -317,7 +321,7 @@ export async function loadPinnedModel(
   lock: ModelLock,
 ): Promise<BasicPitchModel> {
   const digest = await verifyModelFiles(source, lock);
-  const graph = await BasicPitchGraph.load(source.url);
+  const graph = await BasicPitchGraph.load(source.url, source.fetch);
   return new BasicPitchModel(graph, digest);
 }
 

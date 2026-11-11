@@ -60,14 +60,18 @@ research, the design and the cost are in `docs/pianify.md`.
 
 - **Frontend:** React 18 + TypeScript + Vite 6. Canvas piano roll, no UI
   framework. `src/app/`.
-- **Backend:** none. There is no server process, no API and no database. The
-  browser does the work; the CLI does the same work in Node.
+- **Backend:** one small process, and no database. The browser does the work
+  when you use the site; the API in `src/api/` does the same work in Node
+  for callers that are scripts. One conversion path, in `src/api/convert.ts`,
+  which the command line calls too — so a file from the browser, the
+  command line and the API are byte-identical.
 - **Models:** five, behind one interface. Basic Pitch (TensorFlow.js,
   Apache-2.0), Tsumugi (ONNX, MIT), YourMT3+ (ONNX, Apache-2.0), ByteDance's
   piano model (ONNX, CC BY 4.0) and Okarina (ONNX, CC BY-NC-SA). All are
   pinned by SHA-256.
 - **Persistence:** none. Files are read from disk or dropped into the page,
-  and the only output is a downloaded `.mid`.
+  and the only output is a downloaded `.mid`. The API reads an upload into
+  memory and never writes it down.
 - **Audio decoding:** the Web Audio API in the browser; a pure-JavaScript
   decoder (`src/core/audio-node.ts`) in Node, so the CLI needs no `ffmpeg`.
 - **Model seam:** `TranscriptionModel` in `src/core/model.ts` — a model returns
@@ -134,11 +138,28 @@ src/app/      the React app
 
 src/cli/      convert.ts — the command line converter
 
+src/api/      the HTTP API — a second way in, for scripts
+  server.ts      the server: routing, limits, the error shape
+  convert.ts     one conversion, from audio to MIDI — the CLI calls this too
+  model-loader.ts  loading a model from disk, and the file:// fetch
+  params.ts      the request parameters, read strictly
+  multipart.ts   a parser for multipart/form-data
+  errors.ts      the error codes and their status codes
+  openapi.ts     the OpenAPI 3.1 document the server serves
+  backend.ts     the native TensorFlow.js backend, when it is installed
+  index.ts       the entry point
+
 ops/nginx/    the deployment configuration
   voidtrackr.conf          the site vhost
   voidtrackr-headers.conf  the security headers, with this site's CSP
 
+ops/systemd/  voidtrackr-api.service — the API's service
+
 scripts/
+  build-api.mjs    bundle the API server into one file
+  memory-models.mts  how much memory one model needs
+  memory-probe.mts   the memory, window by window
+  memory-stages.mts  the memory, stage by stage
   fetch-model.mjs        fetch the default model's weights, whichever that is
   fetch-basic-pitch.mjs  fetch and verify the Basic Pitch weights
   fetch-okarina.mjs      fetch and verify the Okarina weights
@@ -359,6 +380,34 @@ npm run check:reproducibility
   piano model keeps improving to eight threads, but Okarina is *slower* at
   eight than at four, and Tsumugi and YourMT3+ both turn round at eight.
   Four is the number to pick.
+- **The ONNX runtime's memory arena has to be off, or the box runs out of
+  memory.** The arena is a pool that keeps allocations for the next run. It
+  is faster, and it holds far more memory than it needs: measured on 12
+  November 2026, the piano model peaked at **1.15 GB** with the arena on and
+  **661 MB** with it off. The notes are byte-identical and the conversion
+  is about 5 % slower. On the box, which has a gigabyte, the first number is
+  fatal — the kernel's out-of-memory killer took the API down with it.
+  `DETERMINISTIC_SESSION_OPTIONS` in `src/core/onnx.ts` turns it off.
+- **What each model needs, measured** (one model per process, because the
+  high-water mark is for the whole process): Okarina 460 MB, piano 661 MB,
+  YourMT3+ 1056 MB, Tsumugi 1183 MB. The box has a gigabyte, so **Tsumugi
+  and YourMT3+ cannot be served there** and a request for one of them
+  fails. More memory on the box is the only way to fix that.
+- **TensorFlow.js cannot fetch a `file://` URL without the native backend.**
+  It fetches the model's manifest and its weight shards itself, and Node's
+  own `fetch` does not understand that scheme. The native backend patches
+  it; the box does not have the native backend, so the API brings its own
+  (`fileFetch` in `src/api/model-loader.ts`). Without it, Basic Pitch fails
+  on the box with "fetch failed".
+- **The nginx `location /api/` block must not let nginx swap the API's
+  errors for the site's 404 page.** `proxy_intercept_errors off` is what
+  keeps them as the JSON they are.
+- **`rsync --delete` must not be pointed at the API's directory on the
+  box.** It holds the installed dependencies and the smoke test's
+  recording, and `--delete` would throw both away on every deploy and
+  reinstall the ONNX runtime, which is a large download on a small box.
+  The first attempt at this filled the box's page cache and took it to its
+  knees; it had to be restarted.
 - **Okarina's timebase is measured, never assumed.** The frame period is
   exactly 0.032 s and the leading context exactly 0.976 s, fitted by least
   squares against tone bursts at known times. The earlier constants
@@ -481,16 +530,28 @@ npm run check:reproducibility
 ## Live operations state
 
 - **Site:** `http://192.168.100.109/` — a Proxmox LXC named `voidtrackr`,
-  running nginx and nothing else. The webroot is `/var/www/voidtrackr` and the
+  running nginx and the API service. The webroot is `/var/www/voidtrackr` and the
   vhost is `/etc/nginx/sites-available/voidtrackr.conf`.
+- **The box is small:** two cores and a gigabyte of memory. The API is
+  capped at 820 MB by `ops/systemd/voidtrackr-api.service`, one conversion
+  runs at a time, and Tsumugi and YourMT3+ do not fit there at all. Giving
+  the container more memory is a manual job on the Proxmox side and has
+  not been done.
+- **The API** is at `http://192.168.100.109/api/`, on the same origin as
+  the site. `POST /api/convert` takes the audio and the parameters and
+  answers with the MIDI. `docs/api.md` is the record.
 - **Deploy:** `./deploy.sh 192.168.100.109` from this folder. It builds,
-  rsyncs, installs the vhost and headers, disables the template's own base
-  site, validates with `nginx -t`, reloads, and smoke tests.
+  rsyncs, installs the API and its service, installs the vhost and headers,
+  disables the template's own base site, validates with `nginx -t`,
+  reloads, and smoke tests — including a conversion, because the API can
+  be up and still be broken.
 - **Host registration:** `ops/vm.sh` in the umbrella repo, under `voidtrackr`,
   with the shared deploy key. `./ops/vm.sh voidtrackr 'hostname'`.
 - **SSH:** the container's host keys were regenerated on provisioning — the
   clone had inherited the template's identity. The old ones are in
   `/root/.trash-removed/` on the box.
+- **Never touch Proxmox.** Changing the container's memory, its CPU or its
+  network is the user's manual job. Ask; do not do it.
 - **Current pipeline version:** 0.8.0 (`src/core/version.ts`) — 0.8.0 turned the
   model threads on, at four. The count was one, and the reason it gave was that
   the runtime reduces in an order that depends on the thread count — true of

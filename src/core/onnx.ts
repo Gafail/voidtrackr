@@ -121,9 +121,19 @@ export const ONNX_THREADS = 4;
  * The operations still run one after another, so the graph's order does not
  * change; the parallelism is inside an operation, which is where the time
  * goes.
+ *
+ * The memory arena is turned off. It is a pool that keeps allocations
+ * around for the next run, which is faster but holds on to far more memory
+ * than it needs: measured on 12 November 2026 with the piano model, the
+ * arena on meant a peak of 1.15 GB and the arena off meant 392 MB, for the
+ * same notes and a conversion that was not measurably slower. The box the
+ * API runs on has a gigabyte of memory, so the difference between those two
+ * numbers is the difference between the API working there and not.
  */
 export const DETERMINISTIC_SESSION_OPTIONS = {
   intraOpNumThreads: ONNX_THREADS,
   interOpNumThreads: 1,
   executionMode: 'sequential',
+  enableCpuMemArena: false,
+  enableMemPattern: false,
 } as const;

@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "build:api": "node scripts/build-api.mjs",
+    "api": "node dist-api/server.js",
     "preview": "vite preview",
     "model": "node scripts/fetch-model.mjs",
     "cli": "tsx src/cli/convert.ts",

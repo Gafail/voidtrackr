@@ -73,6 +73,7 @@ USER="${VOIDTRACKR_USER:-root}"
 # other Void* host uses — not a per-project key.
 KEY="${VOIDTRACKR_KEY:-$REPO_ROOT/ops/keys/thevoidco-lxc-id_ed25519}"
 WEBROOT="/var/www/voidtrackr"
+API_DIR="/opt/voidtrackr/api"
 
 # The token in the checked-in vhost that stands in for the real address.
 PLACEHOLDER_IP="192.0.2.0"
@@ -156,6 +157,7 @@ if [ ! -e "$DEFAULT_WEIGHTS" ]; then
 fi
 
 (cd "$SCRIPT_DIR" && npm run build)
+(cd "$SCRIPT_DIR" && npm run build:api)
 
 # Okarina's weights sit at the root of model-onnx/; the others have a folder
 # of their own. Each model is checked by the path the browser actually asks
@@ -179,7 +181,83 @@ say "Uploading site files to ${HOST}:${WEBROOT}"
 "${RSYNC[@]}" --rsync-path="mkdir -p '$WEBROOT' && rsync" \
   "$SCRIPT_DIR/dist/" "$USER@$HOST:$WEBROOT/"
 
-# 3. Install the nginx vhost and this site's headers.
+# 3. The API.
+#
+#    The site is static, but a tool that is driven from a script needs an
+#    address to call. The API is a small Node process on the box, listening
+#    on 127.0.0.1, and nginx proxies /api/ to it.
+#
+#    It is bundled into one file so the box does not need the repository or
+#    a development toolchain. The packages that carry native code are
+#    installed by npm on the box, and the weights are the ones the site
+#    already serves, so the box holds one copy of them rather than two.
+say "Installing the API"
+"${SSH[@]}" "$USER@$HOST" "mkdir -p '$API_DIR'"
+# This one does not delete what is on the box. The API directory holds the
+# installed dependencies and the smoke test's recording, and `--delete`
+# would throw both away on every deploy — and reinstalling the ONNX runtime
+# is a large download on a small box.
+rsync -az --chmod=D755,F644 -e "$RSYNC_SSH" \
+  --rsync-path="mkdir -p '$API_DIR' && rsync" \
+  "$SCRIPT_DIR/dist-api/" "$USER@$HOST:$API_DIR/"
+
+# A recording for the smoke test to convert. It is the test signal from the
+# repository, so the check does not need a real song.
+"${SCP[@]}" "$SCRIPT_DIR/test/sample.wav" "$USER@$HOST:$API_DIR/test.wav"
+
+# The dependencies are only installed when they are not there already, or
+# when the list has changed. `onnxruntime-node` is a large download and
+# there is no point repeating it on every deploy.
+#
+# The install is capped and the cache is cleared afterwards, because the box
+# has a gigabyte of memory: npm unpacking a package this large will fill the
+# page cache and take the box to its knees if it is allowed to use all of it.
+# The first attempt at this did exactly that, and the box had to be
+# restarted. Capping npm's heap and throwing the cache away afterwards keeps
+# it responsive.
+"${SSH[@]}" "$USER@$HOST" "
+  cd '$API_DIR' || exit 1
+  if [ ! -d node_modules/onnxruntime-node ] || [ package.json -nt node_modules/.installed ]; then
+    echo 'installing the API dependencies...'
+    NODE_OPTIONS=--max-old-space-size=384 npm install --omit=dev --no-audit --no-fund \
+      --loglevel=error || exit 1
+    touch node_modules/.installed
+    # The package carries a binary for every platform. The box is linux on
+    # x86, so the other three are dead weight on a disk with room for them.
+    rm -rf node_modules/onnxruntime-node/bin/napi-v6/darwin \
+           node_modules/onnxruntime-node/bin/napi-v6/win32
+    # The cache is a third of the download and is no use afterwards.
+    npm cache clean --force >/dev/null 2>&1 || true
+    rm -rf /root/.npm/_cacache
+  fi
+"
+
+"${SCP[@]}" "$SCRIPT_DIR/ops/systemd/voidtrackr-api.service" \
+  "$USER@$HOST:/tmp/voidtrackr-api.service"
+"${SSH[@]}" "$USER@$HOST" \
+  "install -m 644 /tmp/voidtrackr-api.service /etc/systemd/system/voidtrackr-api.service && \
+   rm -f /tmp/voidtrackr-api.service && \
+   systemctl daemon-reload && \
+   systemctl enable voidtrackr-api >/dev/null 2>&1 && \
+   systemctl restart voidtrackr-api"
+
+# The API has to be answering before nginx starts pointing at it, or the
+# first request after a deploy gets a 502.
+for attempt in $(seq 1 30); do
+  if "${SSH[@]}" "$USER@$HOST" \
+      "curl -fsS -m 3 http://127.0.0.1:8787/api/health" >/dev/null 2>&1; then
+    echo "the API is up"
+    break
+  fi
+  if [ "$attempt" = "30" ]; then
+    echo "error: the API did not come up." >&2
+    "${SSH[@]}" "$USER@$HOST" "journalctl -u voidtrackr-api -n 30 --no-pager" >&2 || true
+    exit 1
+  fi
+  sleep 1
+done
+
+# 4. Install the nginx vhost and this site's headers.
 #    The source files live here, so they are copied across first — `install`
 #    runs on the remote box and cannot see local paths.
 say "Installing nginx configuration"
@@ -197,7 +275,7 @@ say "Installing nginx configuration"
    ln -sf /etc/nginx/sites-available/voidtrackr.conf /etc/nginx/sites-enabled/voidtrackr.conf && \
    rm -f /tmp/voidtrackr-headers.conf /tmp/voidtrackr.conf /tmp/voidtrackr.conf.new"
 
-# 4. One container, one site.
+# 5. One container, one site.
 #
 #    The template the container was cloned from carries its own base landing
 #    page, and that vhost is `listen 80 default_server` — exactly like
@@ -212,21 +290,35 @@ say "Disabling the template's own site"
 "${SSH[@]}" "$USER@$HOST" \
   "find /etc/nginx/sites-enabled -mindepth 1 -maxdepth 1 ! -name 'voidtrackr.conf' -print -delete"
 
-# 5. Validate and reload. nginx -t runs first, so a broken config never
+# 6. Validate and reload. nginx -t runs first, so a broken config never
 #    takes the running site down.
 say "Validating and reloading nginx"
 "${SSH[@]}" "$USER@$HOST" "nginx -t && systemctl reload nginx"
 
-# 6. Smoke test.
+# 7. Smoke test.
 say "Smoke test"
 for path in / /404.html /robots.txt /model/model.json /model-onnx/okarina_m.onnx \
             /model-onnx/tsumugi/tsumugi_other_v1_5.pos32i_i32.onnx \
             /model-onnx/yourmt3/encoder.onnx \
             /model-onnx/piano/piano_kong.onnx \
-            /ort/ort-wasm-simd-threaded.wasm; do
+            /ort/ort-wasm-simd-threaded.wasm \
+            /api/health /api/models /api/openapi.json; do
   code="$("${SSH[@]}" "$USER@$HOST" \
     "curl -s -o /dev/null -w '%{http_code}' -H 'Host: ${HOST}' http://127.0.0.1$path")"
   printf '  %-58s %s\n' "$path" "$code"
 done
+
+# The API is the one thing here that can be up and still be broken, so it
+# is asked to do the job rather than only to answer.
+say "Checking the API can convert"
+"${SSH[@]}" "$USER@$HOST" \
+  "curl -fsS -m 600 -H 'Host: ${HOST}' -F file=@/opt/voidtrackr/api/test.wav \
+     http://127.0.0.1/api/convert -o /tmp/voidtrackr-smoke.mid && \
+   head -c 4 /tmp/voidtrackr-smoke.mid" > /tmp/voidtrackr-smoke.txt 2>&1 || {
+  echo "error: the API could not convert a file." >&2
+  cat /tmp/voidtrackr-smoke.txt >&2
+  exit 1
+}
+echo "  it produced $(cat /tmp/voidtrackr-smoke.txt)"
 
 say "Live at http://${HOST}/"

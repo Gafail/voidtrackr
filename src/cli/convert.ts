@@ -5,63 +5,33 @@
  *   npm run cli -- songs/*.wav --no-drums --json
  *   npm run cli -- song.mp3 -o out/ --model okarina
  *
- * Uses the native TensorFlow.js backend so it is fast enough to run over a
- * folder of recordings.
+ * The conversion itself lives in `src/api/convert.ts`, which the HTTP API
+ * calls as well. That is deliberate: a file produced here and a file
+ * produced by the API have to be byte-identical, and the only way to be
+ * sure of that is to have one code path.
  */
 
-import nodeUtil from 'node:util';
+import { installTfjsNodeBackend } from '../api/backend';
+import { convertAudio } from '../api/convert';
+import { loadModel } from '../api/model-loader';
 
-/**
- * Work around a packaging bug in `@tensorflow/tfjs-node`.
- *
- * Its published build does `require("util")` where it meant to require
- * TensorFlow.js's own utilities, then calls `util.isNullOrUndefined(...)`.
- * Node's `util` module has no such function, so the native backend throws
- * the moment it reads a tensor.
- *
- * `require("util")` hands back a singleton, so defining the missing helper
- * on it here is enough to make the backend work. This has to happen before
- * the backend is used, but not before it is imported, so the import below
- * is dynamic.
- */
-const mutableUtil = nodeUtil as typeof nodeUtil & { isNullOrUndefined?: (value: unknown) => boolean };
-if (typeof mutableUtil.isNullOrUndefined !== 'function') {
-  mutableUtil.isNullOrUndefined = (value: unknown) => value === null || value === undefined;
-}
+await installTfjsNodeBackend();
 
-await import('@tensorflow/tfjs-node');
-
-import { createHash } from 'node:crypto';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { basename, dirname, extname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { basename, extname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { decodeAudio, prepareMono } from '../core/audio';
-import { nodeAudioDecoder } from '../core/audio-node';
-import { loadPinnedModel } from '../core/basic-pitch';
-import { ModelLock, ModelSource, TranscriptionModel } from '../core/model';
-import modelLock from '../core/model.lock.json';
-import { OkarinaModel, OkarinaSize, OKARINA_FILES } from '../core/okarina';
-import okarinaLock from '../core/okarina.lock.json';
-import { nodeOnnxRunner } from '../core/onnx-node';
-import { verifyOnnxWeights } from '../core/onnx-weights';
-import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from '../core/piano';
-import pianoLock from '../core/piano.lock.json';
 import { FrequencyRange } from '../core/range';
 import { QuantiseOptions } from '../core/quantise';
 import { PianifyOptions } from '../core/pianify';
-import { TsumugiModel, TSUMUGI_DIR, TSUMUGI_FILES } from '../core/tsumugi';
-import tsumugiLock from '../core/tsumugi.lock.json';
-import { YourMt3Model, YOURMT3_DIR, YOURMT3_FILES } from '../core/yourmt3';
-import yourmt3Lock from '../core/yourmt3.lock.json';
-import { transcribe } from '../core/pipeline';
-import { buildMidiFile } from '../core/midi';
+import { OkarinaSize } from '../core/okarina';
+import { TranscriptionModel } from '../core/model';
 import { keyName } from '../core/tempo';
 import { DEFAULT_MODEL, listModels, ModelId, MODELS } from '../core/registry';
 import { provenanceFor } from '../core/version';
 import { TranscriptionResult } from '../core/types';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = fileURLToPath(new URL('.', import.meta.url));
 const DEFAULT_MODEL_PATH = resolve(HERE, '..', '..', 'public', 'model', 'model.json');
 const DEFAULT_ONNX_DIR = resolve(HERE, '..', '..', 'models', 'onnx');
 
@@ -259,134 +229,6 @@ Options:
 `);
 }
 
-/**
- * Load the model the user asked for.
- *
- * Every model is checked against its lock file before it runs. If the
- * weights do not match, the output would differ from every previous run, so
- * it is better to stop than to produce a different file quietly.
- */
-async function loadModel(options: CliOptions): Promise<TranscriptionModel> {
-  if (options.model === 'okarina') {
-    const fingerprint = await verifyOkarinaWeights(options.modelDir, options.okarinaSize);
-    return OkarinaModel.load(
-      nodeOnnxRunner,
-      options.modelDir,
-      options.okarinaSize,
-      fingerprint,
-    );
-  }
-
-  if (options.model === 'tsumugi') {
-    const directory = join(options.modelDir, TSUMUGI_DIR);
-    const fingerprint = await verifyOnnxModel(
-      options.modelDir,
-      tsumugiLock,
-      TSUMUGI_DIR,
-      [TSUMUGI_FILES.graph, TSUMUGI_FILES.heads, TSUMUGI_FILES.headsJson],
-      'npm run model:tsumugi',
-    );
-    return TsumugiModel.load(nodeOnnxRunner, directory, fingerprint);
-  }
-
-  if (options.model === 'yourmt3') {
-    const directory = join(options.modelDir, YOURMT3_DIR);
-    const fingerprint = await verifyOnnxModel(
-      options.modelDir,
-      yourmt3Lock,
-      YOURMT3_DIR,
-      [YOURMT3_FILES.encoder, YOURMT3_FILES.decoder, YOURMT3_FILES.vocab],
-      'npm run model:yourmt3',
-    );
-    return YourMt3Model.load(nodeOnnxRunner, directory, fingerprint);
-  }
-
-  if (options.model === 'piano') {
-    const directory = join(options.modelDir, PIANO_DIR);
-    const fingerprint = await verifyOnnxModel(
-      options.modelDir,
-      pianoLock,
-      PIANO_DIR,
-      [PIANO_FILES.graph],
-      'npm run model:piano',
-    );
-    return PianoTranscriptionModel.load(nodeOnnxRunner, directory, fingerprint);
-  }
-
-  return loadPinnedModel(nodeModelSource(options.modelPath), modelLock as ModelLock);
-}
-
-/** Read one of the ONNX weight files, relative to the weights root. */
-async function readOnnxFile(root: string, path: string): Promise<ArrayBuffer> {
-  const bytes = await readFile(join(root, path));
-  return bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer;
-}
-
-/** Check a model's weights against its lock file. */
-async function verifyOnnxModel(
-  root: string,
-  lock: unknown,
-  directory: string,
-  files: string[],
-  fetchCommand: string,
-): Promise<string> {
-  return verifyOnnxWeights(
-    async (path) => {
-      try {
-        return await readOnnxFile(root, path);
-      } catch (error) {
-        // The weights are not in the repository, so a missing file is the
-        // expected case on a fresh checkout. Say which command fixes it.
-        const reason = error instanceof Error ? error.message : String(error);
-        throw new Error(
-          `Could not read the model's ${path} (${reason}). ` +
-            `Run \`${fetchCommand}\` to fetch the weights.`,
-        );
-      }
-    },
-    lock as { files: Record<string, { sha256: string }> },
-    { dir: directory, files },
-    fetchCommand,
-  );
-}
-
-/** Check the Okarina weights against the lock file. */
-async function verifyOkarinaWeights(
-  directory: string,
-  size: OkarinaSize,
-): Promise<string> {
-  const lock = okarinaLock as unknown as {
-    files: Record<string, { sha256: string }>;
-  };
-  const digests: string[] = [];
-
-  for (const name of [OKARINA_FILES.frontEnd, OKARINA_FILES[size]]) {
-    const expected = lock.files[name]?.sha256;
-    if (!expected) {
-      throw new Error(
-        `The lock file does not record a hash for ${name}. ` +
-          'Add it to src/core/okarina.lock.json before using this model.',
-      );
-    }
-    const bytes = await readFile(join(directory, name));
-    const digest = createHash('sha256').update(bytes).digest('hex');
-    if (digest !== expected) {
-      throw new Error(
-        `The model's ${name} does not match the pinned version.\n` +
-          `  expected sha256 ${expected}\n` +
-          `  got      sha256 ${digest}\n` +
-          'Run `npm run model:okarina` to fetch the pinned weights.',
-      );
-    }
-    digests.push(digest);
-  }
-
-  return createHash('sha256').update(digests.join('')).digest('hex');
-}
-
 /** Convert one file and write the MIDI output. */
 async function convertFile(
   filePath: string,
@@ -395,35 +237,39 @@ async function convertFile(
   provenance: string,
 ): Promise<{ result: TranscriptionResult; outputPath: string }> {
   const data = await readFile(filePath);
-  const audio = await decodeAudio(
-    data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer,
-    nodeAudioDecoder,
-  );
-  const samples = prepareMono(audio);
+  const buffer = data.buffer.slice(
+    data.byteOffset,
+    data.byteOffset + data.byteLength,
+  ) as ArrayBuffer;
 
-  const result = await transcribe(samples, {
+  const { result, midi } = await convertAudio(
+    buffer,
+    {
+      detectDrums: options.drums,
+      forceTempo: Number.isFinite(options.tempo) ? options.tempo : undefined,
+      range: options.range,
+      quantise: options.quantise,
+      pianify: options.pianify,
+      onProgress: options.quiet
+        ? undefined
+        : (info) => {
+            process.stderr.write(
+              `\r  ${info.label.padEnd(30)} ${Math.round(info.value * 100)}%`,
+            );
+          },
+    },
     model,
-    detectDrums: options.drums,
-    forceTempo: Number.isFinite(options.tempo) ? options.tempo : undefined,
-    range: options.range,
-    quantise: options.quantise,
-    pianify: options.pianify,
-    onProgress: options.quiet
-      ? undefined
-      : (info) => {
-          process.stderr.write(`\r  ${info.label.padEnd(30)} ${Math.round(info.value * 100)}%`);
-        },
-  });
+    provenance,
+  );
 
   if (!options.quiet) process.stderr.write('\r' + ' '.repeat(50) + '\r');
 
-  const bytes = buildMidiFile(result.tracks, result.tempo, result.key, { provenance });
   await mkdir(options.outputDir, { recursive: true });
   const outputPath = join(
     options.outputDir,
     `${basename(filePath, extname(filePath))}.mid`,
   );
-  await writeFile(outputPath, bytes);
+  await writeFile(outputPath, midi);
 
   return { result, outputPath };
 }
@@ -436,7 +282,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const model = await loadModel(options);
+  const model = await loadModel(options.model, {
+    modelDir: options.modelDir,
+    modelPath: options.modelPath,
+  }, options.okarinaSize);
   const provenance = provenanceFor(model);
 
   if (!options.quiet) {
@@ -490,26 +339,6 @@ async function main(): Promise<void> {
   }
 
   model.dispose?.();
-}
-
-/**
- * Read the model from disk.
- *
- * Node's `fetch` does not understand `file://` URLs, so the files are read
- * here and the URL is handed to TensorFlow.js separately.
- */
-function nodeModelSource(modelPath: string): ModelSource {
-  const directory = dirname(modelPath);
-  return {
-    url: pathToFileURL(modelPath).href,
-    read: async (name: string) => {
-      const bytes = await readFile(join(directory, name));
-      return bytes.buffer.slice(
-        bytes.byteOffset,
-        bytes.byteOffset + bytes.byteLength,
-      ) as ArrayBuffer;
-    },
-  };
 }
 
 main().catch((error) => {

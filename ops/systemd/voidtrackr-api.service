@@ -1,0 +1,60 @@
+# voidtrackr — the API server.
+#
+# The site itself is static and served by nginx. This is the part that
+# answers a request to convert a file: a small Node process that does the
+# same work the browser does, on the same machine.
+#
+# It listens on 127.0.0.1 only. nginx is the only thing that can reach it,
+# and it is the only thing that should.
+
+[Unit]
+Description=voidtrackr API
+Documentation=https://github.com/Gafail/voidtrackr
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/voidtrackr/api
+
+# The weights are the ones the site already serves, so the box holds one
+# copy of them rather than two.
+Environment=NODE_ENV=production
+Environment=VOIDTRACKR_HOST=127.0.0.1
+Environment=VOIDTRACKR_PORT=8787
+Environment=VOIDTRACKR_MODEL_DIR=/var/www/voidtrackr/model-onnx
+Environment=VOIDTRACKR_MODEL_PATH=/var/www/voidtrackr/model/model.json
+Environment=VOIDTRACKR_MAX_UPLOAD=100
+Environment=VOIDTRACKR_CONCURRENCY=1
+
+ExecStart=/usr/bin/node /opt/voidtrackr/api/server.js
+
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+
+# The box has a gigabyte of memory and the model takes a good part of it,
+# so the service is kept small and is not allowed anywhere near the rest of
+# the system.
+#
+# The limit is measured, not guessed. With the runtime's memory arena off
+# (see DETERMINISTIC_SESSION_OPTIONS), the piano model peaks at 661 MB and
+# Okarina at 460 MB; the arena on meant 1.15 GB, which does not fit here at
+# all. Tsumugi needs 1.18 GB and YourMT3+ 1.06 GB, so neither of those two
+# can be served on a box this size.
+MemoryMax=820M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

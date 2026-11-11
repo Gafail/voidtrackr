@@ -125,6 +125,16 @@ export interface ModelSource {
    * directory, such as `model.json` or `group1-shard1of1.bin`.
    */
   read(name: string): Promise<ArrayBuffer>;
+  /**
+   * A `fetch` the runtime can use to get the model's files.
+   *
+   * TensorFlow.js fetches the manifest and the weight shards itself. Node's
+   * own `fetch` does not understand the `file://` scheme, and the native
+   * TensorFlow.js backend patches that — but the native backend is a large
+   * binary and the box the API runs on does not have it. A source that
+   * points at a `file://` URL therefore has to bring its own fetch.
+   */
+  fetch?: typeof fetch;
 }
 
 /**
