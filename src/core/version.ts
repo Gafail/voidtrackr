@@ -36,8 +36,14 @@
  * model shared 63.9 % of Okarina's notes where Basic Pitch shared 40.6 %,
  * and its licence allows the output to be sold. A conversion that does not
  * name a model now produces different notes, and the stamp says so.
+ *
+ * 0.5.0 added the frequency range: a pair of bounds in hertz that choose
+ * which notes are kept. A conversion that does not ask for a range produces
+ * the same notes as before, so only the stamp changes. The range is applied
+ * to the notes rather than to the audio, because filtering the audio was
+ * measured and it is much worse — see `docs/model-research.md`, section 6.
  */
-export const PIPELINE_VERSION = '0.4.0';
+export const PIPELINE_VERSION = '0.5.0';
 
 /** Where the weights came from, for the record. */
 export const MODEL_SOURCE =

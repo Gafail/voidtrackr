@@ -24,6 +24,14 @@ import { transcribe } from '@core/pipeline';
 import { buildMidiFile, toArrayBuffer } from '@core/midi';
 import { provenanceFor } from '@core/version';
 import { NOTE_NAMES } from '@core/constants';
+import {
+  describeRange,
+  FrequencyRange,
+  MAX_FREQUENCY,
+  MIN_FREQUENCY,
+  noteInRange,
+} from '@core/range';
+import { describeQuantise, quantiseSpan } from '@core/quantise';
 import { KeyInfo, TempoInfo } from '@core/types';
 import { PianoRoll } from './PianoRoll';
 import { EditorTrack, fromEditorTracks, toEditorTracks } from './editor';
@@ -214,6 +222,86 @@ export function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [modelId, setModelId] = useState<ModelId>(DEFAULT_MODEL);
 
+  /**
+   * The range of the spectrum to keep, in Hz.
+   *
+   * It starts wide open: everything from the bottom of the keyboard to the
+   * top of hearing. Narrowing it hides the notes outside it, and the file
+   * that is exported carries only what is left.
+   */
+  const [range, setRange] = useState<FrequencyRange>({
+    low: MIN_FREQUENCY,
+    high: MAX_FREQUENCY,
+  });
+
+  /**
+   * The grid the notes are snapped to, in slots per second.
+   *
+   * Zero means the notes are left where the model put them. Thirty lines
+   * them up with a screen that renders thirty frames a second, which is
+   * what a game that reacts to the music needs: a note that starts between
+   * two frames cannot be shown on the frame it belongs to, so the file is
+   * better off agreeing with the frames than being more precise than the
+   * screen.
+   */
+  const [grid, setGrid] = useState(0);
+
+  /** Where the first slot sits, in milliseconds. */
+  const [phase, setPhase] = useState(0);
+
+  /**
+   * The tracks as they are shown, played and exported: only the notes inside
+   * the range, and snapped to the grid if one is set.
+   *
+   * The notes outside the range are not thrown away — they stay in the
+   * editor's state, so widening the range brings them back. That matters
+   * here: a transcription takes minutes, and the range is the thing worth
+   * experimenting with.
+   */
+  const visibleTracks = useMemo(() => {
+    const kept = tracks.map((track) => ({
+      ...track,
+      notes: track.notes.filter((note) => noteInRange(note.pitch, track.kind, range)),
+    }));
+    if (grid <= 0) return kept;
+    const settings = { grid, phase: phase / 1000 };
+    return kept.map((track) => ({
+      ...track,
+      notes: track.notes.map((note) => {
+        const span = quantiseSpan(note.start, note.duration, settings);
+        return { ...note, start: span.start, duration: span.duration };
+      }),
+    }));
+  }, [tracks, range, grid, phase]);
+
+  /**
+   * Take an edit made on the visible tracks back into the full set.
+   *
+   * A note that was hidden could not have been moved or deleted, so it stays
+   * as it was. A note that was visible takes the edited version, and a
+   * visible note that is no longer in the edited list was deleted.
+   */
+  const applyVisibleChange = useCallback(
+    (visible: EditorTrack[]) => {
+      setTracks((previous) =>
+        previous.map((track) => {
+          const edited = visible.find((candidate) => candidate.id === track.id);
+          if (!edited) return track;
+          const byId = new Map(edited.notes.map((note) => [note.id, note]));
+          return {
+            ...track,
+            notes: track.notes.flatMap((note) => {
+              const changed = byId.get(note.id);
+              if (changed) return [changed];
+              return noteInRange(note.pitch, track.kind, range) ? [] : [note];
+            }),
+          };
+        }),
+      );
+    },
+    [range],
+  );
+
   const { theme, toggle: toggleTheme } = useTheme();
 
   const modelCacheRef = useRef<Map<ModelId, TranscriptionModel>>(new Map());
@@ -289,8 +377,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    playerRef.current?.setTracks(tracks);
-  }, [tracks]);
+    playerRef.current?.setTracks(visibleTracks);
+  }, [visibleTracks]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -497,7 +585,7 @@ export function App() {
     // The model that produced the notes, so the stamp names the right one.
     const model = modelCacheRef.current.get(modelId);
     const bytes = buildMidiFile(
-      fromEditorTracks(tracks),
+      fromEditorTracks(visibleTracks),
       { bpm: tempo, confidence: 1, adjusted: false } satisfies TempoInfo,
       key,
       // The stamp records which pipeline and model produced the file, so an
@@ -516,8 +604,8 @@ export function App() {
   };
 
   const noteCount = useMemo(
-    () => tracks.reduce((total, track) => total + track.notes.length, 0),
-    [tracks],
+    () => visibleTracks.reduce((total, track) => total + track.notes.length, 0),
+    [visibleTracks],
   );
 
   // --- Render ----------------------------------------------------------
@@ -585,6 +673,72 @@ export function App() {
               {MODELS[modelId].commercialUse
                 ? `${MODELS[modelId].license} — commercial use permitted`
                 : `${MODELS[modelId].license} — do not sell the output`}
+            </em>
+          </label>
+          <label className="field range-picker">
+            <span>Range</span>
+            <input
+              type="number"
+              min={MIN_FREQUENCY}
+              max={MAX_FREQUENCY}
+              step={10}
+              value={range.low}
+              onChange={(event) =>
+                setRange((previous) => ({
+                  ...previous,
+                  low: Math.max(MIN_FREQUENCY, Number(event.target.value) || 0),
+                }))
+              }
+              disabled={status === 'working'}
+              aria-label="Lowest frequency to keep, in hertz"
+            />
+            <span className="dash">–</span>
+            <input
+              type="number"
+              min={MIN_FREQUENCY}
+              max={MAX_FREQUENCY}
+              step={10}
+              value={range.high}
+              onChange={(event) =>
+                setRange((previous) => ({
+                  ...previous,
+                  high: Math.min(MAX_FREQUENCY, Number(event.target.value) || MAX_FREQUENCY),
+                }))
+              }
+              disabled={status === 'working'}
+              aria-label="Highest frequency to keep, in hertz"
+            />
+            <em>{describeRange(range)}</em>
+          </label>
+          <label className="field grid-picker">
+            <span>Grid</span>
+            <input
+              type="number"
+              min={0}
+              max={480}
+              step={1}
+              value={grid}
+              onChange={(event) => setGrid(Math.max(0, Number(event.target.value) || 0))}
+              disabled={status === 'working'}
+              aria-label="Snap the notes to a grid of this many slots per second. Zero leaves them alone."
+              title="Slots per second. 30 lines the notes up with a 30 FPS screen. Zero leaves them alone."
+            />
+            <span className="dash">@</span>
+            <input
+              type="number"
+              min={0}
+              max={1000}
+              step={1}
+              value={phase}
+              onChange={(event) => setPhase(Math.max(0, Number(event.target.value) || 0))}
+              disabled={status === 'working' || grid <= 0}
+              aria-label="Where the first slot sits, in milliseconds"
+              title="Where the first slot sits, in milliseconds"
+            />
+            <em>
+              {grid > 0
+                ? `${describeQuantise({ grid, phase: phase / 1000 })}`
+                : 'off — the notes stay where the model put them'}
             </em>
           </label>
           {status === 'done' && (
@@ -715,7 +869,7 @@ export function App() {
             <div className="panel">
               <h3>Tracks</h3>
               <ul className="track-list">
-                {tracks.map((track) => (
+                {visibleTracks.map((track) => (
                   <li key={track.id}>
                     <span className="swatch" style={{ background: track.color }} />
                     <span className="track-name">{track.name}</span>
@@ -788,13 +942,13 @@ export function App() {
             </div>
 
             <PianoRoll
-              tracks={tracks}
+              tracks={visibleTracks}
               selected={selected}
               tempo={tempo}
               playhead={playhead}
               theme={theme}
               onSelect={setSelected}
-              onChange={setTracks}
+              onChange={applyVisibleChange}
               onEditStart={onEditStart}
               onEditEnd={onEditEnd}
             />

@@ -437,6 +437,7 @@ code {
 .model-picker {
   margin-bottom: 0;
   gap: 6px;
+  flex: 0 0 auto;
 }
 
 .model-picker > span {
@@ -450,6 +451,73 @@ code {
 .model-picker em {
   max-width: 24ch;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The frequency range. Two boxes in hertz, and the same range written out
+   underneath in notes, because either half of it is the one you want
+   depending on what you are doing with the result. */
+.range-picker {
+  margin-bottom: 0;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.range-picker > span {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.range-picker input[type='number'] {
+  width: 78px;
+}
+
+.range-picker .dash {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.range-picker em {
+  white-space: nowrap;
+  margin-right: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The grid: how many slots a second the notes are snapped to, and where the
+   first slot sits. The second box is in milliseconds because that is the
+   unit a frame grid is talked in. */
+.grid-picker {
+  margin-bottom: 0;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.grid-picker > span {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.grid-picker input[type='number'] {
+  width: 66px;
+}
+
+.grid-picker input[type='number']:last-of-type {
+  width: 52px;
+}
+
+.grid-picker .dash {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.grid-picker em {
+  white-space: nowrap;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

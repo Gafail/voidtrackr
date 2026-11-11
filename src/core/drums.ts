@@ -69,6 +69,20 @@ const BANDS: DrumBand[] = [
   { kind: 'hat', pitch: 42, lo: 6000, hi: 10000, floor: 0.1, delta: 0.1, mult: 2 },
 ];
 
+/**
+ * The band of the spectrum a drum lives in, by its General MIDI note number.
+ *
+ * The drum track carries the General MIDI drum map, not pitches: the kick is
+ * written as C1 (36) although it sounds at about 60 Hz, and the hi-hat is
+ * written as F#1 (42) although it lives between 6 and 10 kHz. Anything that
+ * works in frequencies — a range, a filter — has to ask for the band rather
+ * than the note number.
+ */
+export function drumBand(pitchMidi: number): { lo: number; hi: number } | null {
+  const band = BANDS.find((candidate) => candidate.pitch === pitchMidi);
+  return band ? { lo: band.lo, hi: band.hi } : null;
+}
+
 const SPEC_SIZE = 1024;
 const SPEC_HOP = 220;
 const WINDOW_SECONDS = 10;

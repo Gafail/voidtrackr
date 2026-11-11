@@ -47,6 +47,8 @@ import { nodeOnnxRunner } from '../core/onnx-node';
 import { verifyOnnxWeights } from '../core/onnx-weights';
 import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from '../core/piano';
 import pianoLock from '../core/piano.lock.json';
+import { FrequencyRange } from '../core/range';
+import { QuantiseOptions } from '../core/quantise';
 import { TsumugiModel, TSUMUGI_DIR, TSUMUGI_FILES } from '../core/tsumugi';
 import tsumugiLock from '../core/tsumugi.lock.json';
 import { YourMt3Model, YOURMT3_DIR, YOURMT3_FILES } from '../core/yourmt3';
@@ -75,8 +77,37 @@ interface CliOptions {
   okarinaSize: OkarinaSize;
   drums: boolean;
   tempo?: number;
+  /** Keep only the notes inside this frequency range. */
+  range?: FrequencyRange;
+  /** Snap the notes to a grid of this many slots per second. */
+  quantise?: QuantiseOptions;
   json: boolean;
   quiet: boolean;
+}
+
+/**
+ * Read a frequency range from the command line.
+ *
+ * `--range 400` means "everything below 400 Hz", and `--range 100-1200`
+ * means "between 100 Hz and 1200 Hz". The bounds are the notes' own
+ * fundamentals, so 400 Hz is G4.
+ */
+function parseRange(value: string): FrequencyRange {
+  const parts = value.split('-').map((part) => part.trim());
+  if (parts.length === 1) {
+    const high = Number(parts[0]);
+    if (!Number.isFinite(high)) throw new Error(`Could not read the range "${value}".`);
+    return { low: 0, high };
+  }
+  if (parts.length !== 2) {
+    throw new Error(`Could not read the range "${value}". Use LOW-HIGH, in Hz.`);
+  }
+  const low = Number(parts[0]);
+  const high = Number(parts[1]);
+  if (!Number.isFinite(low) || !Number.isFinite(high)) {
+    throw new Error(`Could not read the range "${value}". Use LOW-HIGH, in Hz.`);
+  }
+  return { low, high };
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -124,6 +155,37 @@ function parseArgs(argv: string[]): CliOptions {
       case '--tempo':
         options.tempo = Number(argv[++i]);
         break;
+      case '--range': {
+        const value = argv[++i] ?? '';
+        try {
+          options.range = parseRange(value);
+        } catch (error) {
+          console.error((error as Error).message);
+          process.exit(1);
+        }
+        break;
+      }
+      case '--quantize':
+      case '--quantise': {
+        const value = Number(argv[++i]);
+        if (!Number.isFinite(value) || value <= 0) {
+          console.error(
+            `Could not read the grid "${argv[i]}". Use the number of slots per second, such as 30.`,
+          );
+          process.exit(1);
+        }
+        options.quantise = { grid: value, phase: 0 };
+        break;
+      }
+      case '--phase': {
+        const value = Number(argv[++i]);
+        if (!Number.isFinite(value)) {
+          console.error(`Could not read the phase "${argv[i]}". Use milliseconds.`);
+          process.exit(1);
+        }
+        options.quantise = { grid: options.quantise?.grid ?? 30, phase: value / 1000 };
+        break;
+      }
       case '--json':
         options.json = true;
         break;
@@ -172,6 +234,11 @@ Options:
       --okarina-size <s|m|l> Which Okarina model to use (default m)
       --no-drums            Skip drum detection
       --tempo <bpm>         Force a tempo instead of estimating one
+      --range <low>-<high>  Keep only the notes inside this frequency range, in Hz.
+                            --range 400 means everything below 400 Hz.
+      --quantize <hz>        Snap the notes to a grid of this many slots per second.
+                            --quantize 30 lines the notes up with a 30 FPS screen.
+      --phase <ms>           Where the first slot sits, in milliseconds.
       --json                Print results as JSON
   -l, --list-models         List the models and their licences
   -q, --quiet               Only print errors
@@ -324,6 +391,8 @@ async function convertFile(
     model,
     detectDrums: options.drums,
     forceTempo: Number.isFinite(options.tempo) ? options.tempo : undefined,
+    range: options.range,
+    quantise: options.quantise,
     onProgress: options.quiet
       ? undefined
       : (info) => {

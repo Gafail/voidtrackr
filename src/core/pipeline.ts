@@ -17,8 +17,10 @@ import { SAMPLE_RATE } from './constants';
 import { analyzeDrums, hitsToNotes } from './drums';
 import { resample } from './dsp';
 import { sortNotes } from './notes';
+import { describeRange, filterByRange, FrequencyRange } from './range';
 import { correctTuning } from './tuning';
 import { estimateKey, estimateTempo } from './tempo';
+import { describeQuantise, quantiseNotes, QuantiseOptions } from './quantise';
 import { KeyInfo, ProgressInfo, TempoInfo, Track, TranscriptionResult } from './types';
 
 export interface TranscribeOptions {
@@ -32,6 +34,24 @@ export interface TranscribeOptions {
   forceTempo?: number;
   /** Force the key instead of estimating it. */
   forceKey?: { tonic: number; mode: 'major' | 'minor' };
+  /**
+   * Keep only the notes that live inside this frequency range.
+   *
+   * The range is applied to the notes the model found, not to the audio, so
+   * the model still hears the whole recording. The tempo and the key are
+   * estimated from the whole recording as well, because they belong to the
+   * song rather than to the part of it that was kept.
+   */
+  range?: FrequencyRange;
+  /**
+   * Snap the notes to a fixed grid, for something that runs at a fixed rate.
+   *
+   * A game rendering 30 frames a second can only show a note on one of its
+   * own frames, so the file is better off agreeing with the frame grid than
+   * being more precise than the screen. The tempo and the key are estimated
+   * before this, from the notes as the model found them.
+   */
+  quantise?: QuantiseOptions;
 }
 
 /**
@@ -123,7 +143,36 @@ export async function transcribe(
     }
   }
 
+  // --- The frequency range ---------------------------------------------
+  //
+  // This runs last, on the notes the model found. Filtering the audio
+  // instead would be much worse: a model reads a note from its harmonic
+  // series, and cutting the audio takes that evidence away. See `range.ts`.
+  if (options.range) {
+    const before = tracks.reduce((sum, track) => sum + track.notes.length, 0);
+    for (const track of tracks) {
+      track.notes = filterByRange(track.notes, track.kind, options.range);
+    }
+    const after = tracks.reduce((sum, track) => sum + track.notes.length, 0);
+    log.push(
+      `Kept ${describeRange(options.range)}: ${after} of ${before} notes.`,
+    );
+  }
+
   for (const track of tracks) sortNotes(track.notes);
+
+  // --- The grid ---------------------------------------------------------
+  //
+  // This runs after the range, so only the notes that are kept are moved.
+  // The tempo and the key were estimated before both, from the notes as the
+  // model found them: the grid is for the thing watching the file, not for
+  // the song.
+  if (options.quantise && options.quantise.grid > 0) {
+    for (const track of tracks) {
+      track.notes = quantiseNotes(track.notes, options.quantise);
+    }
+    log.push(`Snapped the notes to a grid of ${describeQuantise(options.quantise)}.`);
+  }
 
   report(1, 'Done');
 
@@ -134,7 +183,7 @@ export async function transcribe(
     duration,
     stats: {
       modelNotes: modelNoteCount,
-      finalNotes: allNotes.length,
+      finalNotes: tracks.reduce((sum, track) => sum + track.notes.length, 0),
       drumHits,
       drumsDetected,
     },

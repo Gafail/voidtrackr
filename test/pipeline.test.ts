@@ -41,7 +41,7 @@ import modelLock from '../src/core/model.lock.json';
 import { transcribe } from '../src/core/pipeline';
 import { buildMidiFile } from '../src/core/midi';
 import { provenanceFor, PIPELINE_VERSION } from '../src/core/version';
-import { modelFrameToTime, timeToModelFrame, SAMPLE_RATE } from '../src/core/constants';
+import { modelFrameToTime, timeToModelFrame, midiToHz, SAMPLE_RATE } from '../src/core/constants';
 import { RawNote, Track } from '../src/core/types';
 
 const BPM = 120;
@@ -207,6 +207,121 @@ test('writes a readable MIDI file', () => {
     }
   }
   assert.equal(chunks, trackCount);
+});
+
+// --- The frequency range -----------------------------------------------
+//
+// The range selects notes out of a finished transcription. It never changes
+// the transcription itself, and it never touches the audio: a model that was
+// given a low-passed recording finds far fewer of the notes it should.
+
+test('the range keeps only the notes inside it', async () => {
+  const limited = await transcribe(samples, { model, range: { low: 0, high: 400 } });
+
+  const kept = limited.tracks.flatMap((track) => track.notes);
+  assert.ok(kept.length > 0, 'the range kept nothing at all');
+
+  for (const track of limited.tracks) {
+    if (track.kind === 'drums') continue;
+    for (const note of track.notes) {
+      assert.ok(
+        midiToHz(note.pitchMidi) <= 400,
+        `a note at ${midiToHz(note.pitchMidi).toFixed(0)} Hz survived a 400 Hz ceiling`,
+      );
+    }
+  }
+});
+
+test('the range keeps the low notes and drops the high ones', async () => {
+  const limited = await transcribe(samples, { model, range: { low: 0, high: 400 } });
+
+  const bass = limited.tracks.find((track) => track.kind === 'bass');
+  assert.ok(bass && bass.notes.length > 0, 'the bass line was lost');
+
+  // The melody reaches up to D5, which is above the ceiling.
+  const melody = limited.tracks.find((track) => track.kind === 'melody');
+  assert.ok(melody, 'no melody track');
+  assert.ok(
+    melody.notes.every((note) => midiToHz(note.pitchMidi) <= 400),
+    'a melody note above the ceiling survived',
+  );
+});
+
+test('the range does not change the notes that are inside it', async () => {
+  const limited = await transcribe(samples, { model, range: { low: 0, high: 400 } });
+
+  const describe = (tracks: Track[]) =>
+    tracks
+      .flatMap((track) =>
+        track.notes.map((note) => `${track.kind}:${note.pitchMidi}:${note.startTime}`),
+      )
+      .sort();
+
+  const full = describe(result.tracks);
+  for (const kept of describe(limited.tracks)) {
+    assert.ok(full.includes(kept), `the range invented a note: ${kept}`);
+  }
+});
+
+test('the range does not change the tempo', async () => {
+  const limited = await transcribe(samples, { model, range: { low: 0, high: 400 } });
+  assert.equal(limited.tempo.bpm, result.tempo.bpm);
+});
+
+// --- The grid ----------------------------------------------------------
+//
+// A game that renders 30 frames a second can only show a note on one of its
+// own frames, so the file is better off agreeing with the frames.
+
+test('the grid snaps the notes to its slots', async () => {
+  const snapped = await transcribe(samples, { model, quantise: { grid: 30 } });
+
+  const period = 1 / 30;
+  const notes = snapped.tracks.flatMap((track) => track.notes);
+  assert.ok(notes.length > 0, 'the grid threw the notes away');
+
+  for (const note of notes) {
+    const slots = note.startTime / period;
+    assert.ok(
+      Math.abs(slots - Math.round(slots)) < 1e-6,
+      `a note at ${note.startTime.toFixed(4)}s is not on a slot`,
+    );
+  }
+});
+
+test('the grid moves the notes by less than half a slot', async () => {
+  const snapped = await transcribe(samples, { model, quantise: { grid: 30 } });
+  const half = 1 / 60;
+
+  const before = result.tracks.flatMap((track) =>
+    track.notes.map((note) => ({
+      kind: track.kind,
+      pitch: note.pitchMidi,
+      start: note.startTime,
+    })),
+  );
+
+  for (const track of snapped.tracks) {
+    for (const note of track.notes) {
+      // Every snapped note has to be the same note as one the model found,
+      // within half a slot of it.
+      const near = before.some(
+        (original) =>
+          original.kind === track.kind &&
+          original.pitch === note.pitchMidi &&
+          Math.abs(original.start - note.startTime) <= half + 1e-6,
+      );
+      assert.ok(
+        near,
+        `a note at ${note.startTime.toFixed(4)}s has no original within half a slot`,
+      );
+    }
+  }
+});
+
+test('the grid does not change the tempo', async () => {
+  const snapped = await transcribe(samples, { model, quantise: { grid: 30 } });
+  assert.equal(snapped.tempo.bpm, result.tempo.bpm);
 });
 
 // --- Reproducibility ---------------------------------------------------
