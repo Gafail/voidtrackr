@@ -430,7 +430,7 @@ export function createApiServer(options: ServerOptions): Server {
           default: DEFAULT_MODEL,
           models: MODEL_IDS.map((id) => ({
             ...MODELS[id],
-            weightsUrl: `/model-onnx/${id}`,
+            weightsUrl: MODELS[id].weightsPath,
           })),
         });
         return;

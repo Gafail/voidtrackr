@@ -76,6 +76,18 @@ there. The other four models do not use TensorFlow.js at all.
 The catalogue, with the licence on each entry. The licence decides whether
 the output can be sold, so it is stated rather than buried.
 
+Each entry also carries `weightsUrl`, the path the site serves that model's
+weights from. It is worth reading rather than guessing, because the paths
+are not all the same shape:
+
+| model | `weightsUrl` |
+|---|---|
+| `basic-pitch` | `/model/` — a TensorFlow.js model, not an ONNX one |
+| `okarina` | `/model-onnx/` — its files sit at the root of the tree |
+| `piano` | `/model-onnx/piano/` |
+| `tsumugi` | `/model-onnx/tsumugi/` |
+| `yourmt3` | `/model-onnx/yourmt3/` |
+
 ### `POST /api/convert`
 
 The one that does the work. See below.

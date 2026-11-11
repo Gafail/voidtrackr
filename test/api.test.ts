@@ -22,7 +22,10 @@ import { fileFetch } from '../src/api/model-loader';
 import { boundaryOf, parseMultipart } from '../src/api/multipart';
 import { parseParameters } from '../src/api/params';
 import { createApiServer } from '../src/api/server';
+import { PIANO_DIR } from '../src/core/piano';
 import { DEFAULT_MODEL } from '../src/core/registry';
+import { TSUMUGI_DIR } from '../src/core/tsumugi';
+import { YOURMT3_DIR } from '../src/core/yourmt3';
 
 /** Build a multipart body, the way a browser would send one. */
 function multipart(
@@ -362,6 +365,40 @@ test('the API says what it is', async (t) => {
   const document = (await spec.json()) as { openapi: string; paths: Record<string, unknown> };
   assert.match(document.openapi, /^3\./);
   assert.ok('/convert' in document.paths);
+});
+
+test('the API says where each model\'s weights really are', async (t) => {
+  const api = await startServer();
+  t.after(() => api.close());
+
+  const response = await fetch(`${api.url}/api/models`);
+  assert.equal(response.status, 200);
+  const catalogue = (await response.json()) as {
+    models: { id: string; weightsUrl: string }[];
+  };
+
+  const paths = new Map(catalogue.models.map((model) => [model.id, model.weightsUrl]));
+
+  // Basic Pitch is a TensorFlow.js model and its files are not in the ONNX
+  // tree at all. Okarina's ONNX files sit at the root of that tree rather
+  // than in a folder of their own. The other three are in a folder named
+  // after the model.
+  assert.equal(paths.get('basic-pitch'), '/model/');
+  assert.equal(paths.get('okarina'), '/model-onnx/');
+  assert.equal(paths.get('piano'), `/model-onnx/${PIANO_DIR}/`);
+  assert.equal(paths.get('tsumugi'), `/model-onnx/${TSUMUGI_DIR}/`);
+  assert.equal(paths.get('yourmt3'), `/model-onnx/${YOURMT3_DIR}/`);
+
+  // No model may point at a path the site does not serve. This is the
+  // mistake the catalogue was made to stop: a path guessed from the model's
+  // id is a 404 for every model whose layout is not the obvious one.
+  for (const [id, path] of paths) {
+    assert.ok(path.startsWith('/'), `${id} has no absolute path`);
+    assert.ok(
+      path === '/model/' || path.startsWith('/model-onnx/'),
+      `${id} points outside the served weight directories: ${path}`,
+    );
+  }
 });
 
 test('the API answers a browser with a page', async (t) => {

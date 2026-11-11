@@ -402,6 +402,15 @@ npm run check:reproducibility
 - **The nginx `location /api/` block must not let nginx swap the API's
   errors for the site's 404 page.** `proxy_intercept_errors off` is what
   keeps them as the JSON they are.
+- **A model's weights are not at `/model-onnx/<id>`.** The API's catalogue
+  used to guess that path, and it was wrong for two models of five: Basic
+  Pitch is a TensorFlow.js model and its files are in `/model/`, and
+  Okarina's ONNX files sit at the root of `/model-onnx/` rather than in a
+  folder of their own. The path is now stated in the catalogue
+  (`weightsPath` in `src/core/registry.ts`) and checked by a test against
+  the directory constants the loaders use, so renaming a folder breaks the
+  test rather than the site. Do not guess this path again — read it from
+  the catalogue.
 - **`rsync --delete` must not be pointed at the API's directory on the
   box.** It holds the installed dependencies and the smoke test's
   recording, and `--delete` would throw both away on every deploy and
