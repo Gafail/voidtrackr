@@ -61,8 +61,17 @@
  * of a chord is the note that survives. A conversion that does not ask for
  * the arrangement produces the same notes as before, so only the stamp
  * changes.
+ *
+ * 0.8.0 turned the threads on. The count was pinned to one because the
+ * runtime reduces in an order that depends on it, and the raw output of a
+ * graph does differ at four threads and above. The exported file did not:
+ * measured over every model in the catalogue, in the browser and on the
+ * command line, and over the user's own tracks, the MIDI is byte identical
+ * at 1, 2, 4 and 8 threads. The count is four now — eight is slower for
+ * three of the five models — and a conversion takes about half the time
+ * again. The notes do not change, so only the stamp does.
  */
-export const PIPELINE_VERSION = '0.7.0';
+export const PIPELINE_VERSION = '0.8.0';
 
 /** Where the weights came from, for the record. */
 export const MODEL_SOURCE =

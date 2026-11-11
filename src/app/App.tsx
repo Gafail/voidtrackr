@@ -11,7 +11,7 @@ import modelLock from '@core/model.lock.json';
 import { OkarinaModel, OKARINA_FILES } from '@core/okarina';
 import okarinaLock from '@core/okarina.lock.json';
 import { createWebOnnxRunner } from '@core/onnx-web';
-import { OnnxRunner } from '@core/onnx';
+import { OnnxRunner, ONNX_THREADS } from '@core/onnx';
 import { verifyOnnxWeights } from '@core/onnx-weights';
 import { PianoTranscriptionModel, PIANO_DIR, PIANO_FILES } from '@core/piano';
 import pianoLock from '@core/piano.lock.json';
@@ -41,6 +41,33 @@ const MODEL_URL = '/model/model.json';
 
 /** Where the ONNX weights are served from. */
 const ONNX_URL = '/model-onnx/';
+
+/**
+ * How many threads the model will actually use.
+ *
+ * The runtime can only use more than one when the page is cross-origin
+ * isolated, which needs `SharedArrayBuffer`. The web server sends the two
+ * headers that ask for it, but a page served over plain HTTP at a LAN
+ * address is not a secure context, so the browser will not grant it unless
+ * the browser is told to treat the address as secure. When it is not, the
+ * runtime prints "Falling back to single-threading" and runs on one thread.
+ *
+ * So the count is read rather than assumed: the header says what the browser
+ * is allowing, and the header is shown so that a browser without the flag
+ * says so rather than quietly running slowly.
+ */
+const THREADS = (() => {
+  if (typeof self === 'undefined' || !self.crossOriginIsolated) return 1;
+  const cores = navigator.hardwareConcurrency || 1;
+  return Math.max(1, Math.min(ONNX_THREADS, cores));
+})();
+
+/** What to tell the reader about the thread count. */
+const THREADS_HINT =
+  'The model is running on one thread. The browser will only allow more when the ' +
+  'page is cross-origin isolated, which needs the browser to be started with ' +
+  '--unsafely-treat-insecure-origin-as-secure=' +
+  window.location.origin;
 
 /**
  * Read the model over HTTP.
@@ -673,6 +700,12 @@ export function App() {
           </p>
         </div>
         <div className="header-actions">
+          <p
+            className={`threads${THREADS > 1 ? '' : ' threads-single'}`}
+            title={THREADS > 1 ? `The model is using ${THREADS} threads.` : THREADS_HINT}
+          >
+            {THREADS} {THREADS === 1 ? 'thread' : 'threads'}
+          </p>
           <button
             className="theme-toggle"
             type="button"

@@ -97,14 +97,33 @@ export interface OnnxRunner {
 }
 
 /**
- * Session options that keep the output reproducible.
+ * How many threads a model may use.
  *
- * ONNX Runtime reduces in an order that depends on the thread count, so the
- * count is pinned. Otherwise two runs of the same file could differ in the
- * last bits, which is exactly what this project promises not to do.
+ * This was one, for a reason that turned out to be smaller than it looked.
+ * ONNX Runtime reduces in an order that depends on the thread count, so with
+ * more than one thread the raw output of a graph can differ in its last bits.
+ * The exported file did not: measured on 11 November 2026 over every model in
+ * the catalogue, in the browser and on the command line, and over the user's
+ * own tracks, the MIDI was byte identical at 1, 2, 4 and 8 threads. The
+ * differences are in the last bits of a float and the model's thresholds turn
+ * them into the same notes. See `docs/threading.md`.
+ *
+ * Four is the number, and not eight, because eight is not always better:
+ * measured per model, Okarina is slower at eight than at four, and Tsumugi
+ * and YourMT3+ both turn round at eight. Only the piano model — the default
+ * — keeps going.
+ */
+export const ONNX_THREADS = 4;
+
+/**
+ * Session options shared by both runtimes.
+ *
+ * The operations still run one after another, so the graph's order does not
+ * change; the parallelism is inside an operation, which is where the time
+ * goes.
  */
 export const DETERMINISTIC_SESSION_OPTIONS = {
-  intraOpNumThreads: 1,
+  intraOpNumThreads: ONNX_THREADS,
   interOpNumThreads: 1,
   executionMode: 'sequential',
 } as const;

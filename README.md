@@ -207,6 +207,18 @@ octave of reach, ten notes a second. It is applied to the notes as they
 stand, so it can be turned on and off without transcribing again. What it
 costs and what it buys is in [`docs/pianify.md`](docs/pianify.md).
 
+The header shows how many threads the model is using. It says **1** unless
+the page is cross-origin isolated, which a browser will only allow on
+`localhost` or over https. To get four threads on a LAN address, start the
+browser with
+
+```
+--unsafely-treat-insecure-origin-as-secure=http://192.168.100.109
+```
+
+or serve the site over https with a certificate the machine trusts. The
+command line needs neither: it uses four threads on its own.
+
 ### On the command line
 
 ```bash

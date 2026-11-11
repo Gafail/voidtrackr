@@ -327,30 +327,34 @@ npm run check:reproducibility
   there. `src/cli/convert.ts` adds the missing function before the backend
   loads.
 - The native backend registers itself as `tensorflow`, not `node`.
-- **ONNX Runtime reduces in an order that depends on the thread count.** Both
-  `src/core/onnx-node.ts` and `src/core/onnx-web.ts` pin `intraOpNumThreads`
-  to 1, or two runs of the same file could differ in the last bits.
-  **This was measured on 11 November 2026 and the pin is stronger than the
-  reason given for it.** The raw output of the piano graph *does* differ in
-  Node at four threads and above (one and two agree; four and eight agree
-  with each other but not with one and two). The **exported MIDI does not**:
-  it is byte-identical at 1/2/4/8 threads for every model in the catalogue,
-  in the browser and on the command line, and over the user's own tracks. The
-  browser at any thread count and the command line at any thread count both
-  produce sha256 `7b4930d4…` for the same file. The differences are in the
-  last bits of a float and the model's thresholds turn them into the same
-  notes. `docs/threading.md` has the full record, including what it would
-  cost to lift the pin.
-- **The site cannot thread in the browser even if the code allowed it.** The
-  runtime needs `SharedArrayBuffer`, which needs cross-origin isolation,
-  which needs `Cross-Origin-Opener-Policy: same-origin` and
-  `Cross-Origin-Embedder-Policy: require-corp`. The site sends neither, so
-  `crossOriginIsolated` is false and ONNX Runtime Web forces the count back
-  to one itself (`ort.mjs:1784-1795`, "Falling back to single-threading").
-  Measured on the live site: `crossOriginIsolated: false`, no `SharedArrayBuffer`,
-  **zero Workers created**, and the browser process tree holds **1.1 to 1.2
-  cores** for the whole conversion. That last number is the proof: a
-  threaded graph would be burning four or eight.
+- **ONNX Runtime reduces in an order that depends on the thread count, and
+  this used to be pinned to one.** It is four now, in both runtimes, from
+  `ONNX_THREADS` in `src/core/onnx.ts`. The pin was justified by the raw
+  output of a graph differing in its last bits, and that part is true: in
+  Node the piano graph's raw output *does* differ at four threads and above
+  (one and two agree; four and eight agree with each other but not with one
+  and two). The **exported MIDI does not**: it is byte-identical at 1/2/4/8
+  threads for every model in the catalogue, in the browser and on the command
+  line, and over the user's own tracks. The browser at any thread count and
+  the command line at any thread count both produce the same file. The
+  differences are in the last bits of a float and the model's thresholds turn
+  them into the same notes. `docs/threading.md` has the full record.
+- **The browser cannot thread on plain HTTP at a LAN address, whatever the
+  headers say.** The runtime needs `SharedArrayBuffer`, which needs
+  cross-origin isolation, which needs `Cross-Origin-Opener-Policy: same-origin`
+  and `Cross-Origin-Embedder-Policy: require-corp` — both now in
+  `ops/nginx/voidtrackr-headers.conf`. But cross-origin isolation also needs
+  a **secure context**, and a page served over plain HTTP at a LAN address is
+  not one. Measured: with the headers on, `http://192.168.100.109/` still
+  reports `isSecureContext: false`, `crossOriginIsolated: false` and no
+  `SharedArrayBuffer`, and the runtime falls back to one thread on its own
+  (`ort.mjs:1784-1795`, "Falling back to single-threading"). The browser has
+  to be started with
+  `--unsafely-treat-insecure-origin-as-secure=http://192.168.100.109`, or
+  the site has to be served over https with a certificate the client trusts.
+  The app reads the count the browser is actually allowing and shows it in
+  the header, so a browser without the flag says "1 thread" rather than
+  running slowly in silence.
 - **Eight threads is not always the best number.** Measured per model: the
   piano model keeps improving to eight threads, but Okarina is *slower* at
   eight than at four, and Tsumugi and YourMT3+ both turn round at eight.
@@ -487,8 +491,19 @@ npm run check:reproducibility
 - **SSH:** the container's host keys were regenerated on provisioning — the
   clone had inherited the template's identity. The old ones are in
   `/root/.trash-removed/` on the box.
-- **Current pipeline version:** 0.7.0 (`src/core/version.ts`) — the pianify
-  stage was added in 0.6.0 and corrected here. The stage as it shipped put the
+- **Current pipeline version:** 0.8.0 (`src/core/version.ts`) — 0.8.0 turned the
+  model threads on, at four. The count was one, and the reason it gave was that
+  the runtime reduces in an order that depends on the thread count — true of
+  the raw output of a graph, false of the exported file, which is identical at
+  1, 2, 4 and 8 threads for every model. A conversion takes about half the
+  time again: 44 seconds to 30 in the browser, 22 to 12 on the command line,
+  and the notes do not change. The browser needs
+  `--unsafely-treat-insecure-origin-as-secure=http://192.168.100.109`, because
+  plain HTTP at a LAN address is not a secure context and the isolation
+  headers alone do nothing there; the app shows the count the browser is
+  actually allowing, in the header.
+- **The pianify stage** was added in 0.6.0 and corrected in 0.7.0. The stage
+  as it shipped put the
   notes in the wrong hands: it worked the split point out from the material,
   which on a mix lands in the treble, so the left hand played the melody up to
   MIDI 87 and the right hand played the bass down to 46. The split is at

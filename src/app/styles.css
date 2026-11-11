@@ -301,6 +301,23 @@ code {
   flex-wrap: wrap;
 }
 
+/* How many threads the model is using. It is a number that identifies how
+   the tool is running, so it is set in the mono face, like the rest of the
+   numbers. When the browser will not allow more than one it is dimmed, and
+   hovering says what would unlock it. */
+.threads {
+  margin: 0;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.threads-single {
+  opacity: 0.75;
+}
+
 /* The theme toggle. One button, two states: the icon shows the theme the
    reader is in, and pressing it moves to the other one. */
 .theme-toggle {

@@ -11,6 +11,7 @@
 import {
   DETERMINISTIC_SESSION_OPTIONS,
   ExternalDataFile,
+  ONNX_THREADS,
   OnnxDataType,
   OnnxRunner,
   OnnxTensor,
@@ -31,7 +32,12 @@ export async function createWebOnnxRunner(): Promise<OnnxRunner> {
   const ort = await import('onnxruntime-web/wasm');
 
   ort.env.wasm.wasmPaths = WASM_PATH;
-  ort.env.wasm.numThreads = 1;
+  // The runtime reads this once, when its WebAssembly proxy starts, so it
+  // has to be set before the first session is created. It is also ignored
+  // unless the page is cross-origin isolated: without `SharedArrayBuffer`
+  // the runtime puts the count back to one and says so in the console.
+  // The isolation headers are in `ops/nginx/voidtrackr-headers.conf`.
+  ort.env.wasm.numThreads = ONNX_THREADS;
 
   return {
     async createSession(path: string, externalData?: ExternalDataFile[]) {
