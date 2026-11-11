@@ -164,9 +164,17 @@ scripts/
   pianify-fold-depth.mts  the gap between one strike on a key and the next
   pianify-long-notes.mts  what is inside the long notes
   pianify-look.mts      the arrangement as a text piano roll
+  onnx-threads.mts      the graph alone, at each thread count
+  onnx-threads-pipeline.mts  the whole conversion, at each thread count
+  onnx-threads-models.mts    the exported file, for every model
+  onnx-threads-material.mts  the exported file, over the user's own tracks
+  onnx-threads-midi.mts  the exported file, note by note
+  onnx-threads-diff.mts  the notes that differ, if any do
+  onnx-threads-digest.mts  the raw output of the graph, at each thread count
 
 docs/model-research.md   the survey of every model, and what was measured
 docs/pianify.md          the arrangement stage: the research, the design, the cost
+docs/threading.md        the thread count: why it is pinned, and what it buys
 test/                    pipeline.test.ts, models.test.ts, sha256.test.ts, onnx-models.test.ts
                          range.test.ts, quantise.test.ts, pianify.test.ts
 public/                  404.html and robots.txt, copied into the build
@@ -322,6 +330,31 @@ npm run check:reproducibility
 - **ONNX Runtime reduces in an order that depends on the thread count.** Both
   `src/core/onnx-node.ts` and `src/core/onnx-web.ts` pin `intraOpNumThreads`
   to 1, or two runs of the same file could differ in the last bits.
+  **This was measured on 11 November 2026 and the pin is stronger than the
+  reason given for it.** The raw output of the piano graph *does* differ in
+  Node at four threads and above (one and two agree; four and eight agree
+  with each other but not with one and two). The **exported MIDI does not**:
+  it is byte-identical at 1/2/4/8 threads for every model in the catalogue,
+  in the browser and on the command line, and over the user's own tracks. The
+  browser at any thread count and the command line at any thread count both
+  produce sha256 `7b4930d4…` for the same file. The differences are in the
+  last bits of a float and the model's thresholds turn them into the same
+  notes. `docs/threading.md` has the full record, including what it would
+  cost to lift the pin.
+- **The site cannot thread in the browser even if the code allowed it.** The
+  runtime needs `SharedArrayBuffer`, which needs cross-origin isolation,
+  which needs `Cross-Origin-Opener-Policy: same-origin` and
+  `Cross-Origin-Embedder-Policy: require-corp`. The site sends neither, so
+  `crossOriginIsolated` is false and ONNX Runtime Web forces the count back
+  to one itself (`ort.mjs:1784-1795`, "Falling back to single-threading").
+  Measured on the live site: `crossOriginIsolated: false`, no `SharedArrayBuffer`,
+  **zero Workers created**, and the browser process tree holds **1.1 to 1.2
+  cores** for the whole conversion. That last number is the proof: a
+  threaded graph would be burning four or eight.
+- **Eight threads is not always the best number.** Measured per model: the
+  piano model keeps improving to eight threads, but Okarina is *slower* at
+  eight than at four, and Tsumugi and YourMT3+ both turn round at eight.
+  Four is the number to pick.
 - **Okarina's timebase is measured, never assumed.** The frame period is
   exactly 0.032 s and the leading context exactly 0.976 s, fitted by least
   squares against tone bursts at known times. The earlier constants
