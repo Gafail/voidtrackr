@@ -534,17 +534,27 @@ npm run check:reproducibility
   running nginx and nothing else. The webroot is `/var/www/voidtrackr` and
   the vhost is `/etc/nginx/sites-available/voidtrackr.conf`. There is no
   service behind it, no process and no runtime: it serves files.
-- **The box is small, and that is fine.** Two cores and a gigabyte of memory
-  at the time of writing; the container is being cut to **1 core and 256 MB**,
-  which is the user's manual job on the Proxmox side and is not done by this
-  project. It does not need to be bigger, because the box only holds files:
-  the model's weights (367 MB) and the site. Measured after the API was
-  removed, the whole stack is **53 MB resident** — journald 27 MB,
-  networkd 26 MB, systemd 15 MB, nginx under 10 MB — and streaming the 96 MB
-  piano weight file moves that by about 2 MB, because the file goes through
-  the reclaimable page cache and not through nginx's heap. The model runs in
+- **The box is small, and that is fine.** The container is **1 core and
+  256 MB** of memory, set by the user on the Proxmox side; this project does
+  not touch Proxmox. It does not need to be bigger, because the box only
+  holds files: the model's weights (367 MB) and the site. The model runs in
   the browser, so the machine that opens the page needs the memory, not the
-  box.
+  box. Measured on the 256 MB container on 12 November 2026:
+  - The whole stack is **46 MB resident** — journald 12 MB, networkd 28 MB,
+    systemd 27 MB, and **nginx 7 KB**.
+  - Streaming the 96 MB piano weight file moves `memory.current` to 253 MB
+    and no further: the kernel reclaims page cache instead of failing, and
+    `memory.events` records **zero** OOM kills.
+  - Allocating a further 120 MB in a child process leaves the site serving
+    200 throughout, again with zero OOM events.
+  - **Six concurrent downloads** of the large weight files: the site stayed
+    at 200 for the whole run, nginx stayed at 7 KB, and `memory.peak` was
+    255 MB of 256.
+  - A cold-cache browser conversion exported `cb8200754c1557bb` — the same
+    bytes as always — with the container at its ceiling and the site up.
+
+  The weight files are not gzipped, because `.onnx` is not in nginx's
+  `gzip_types`, so one core is never asked to compress 96 MB.
 - **Deploy:** `./deploy.sh 192.168.100.109` from this folder. It builds,
   rsyncs, takes the old API off the box if it is still there, installs the
   vhost and headers, disables the template's own base site, validates with
