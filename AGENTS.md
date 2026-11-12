@@ -140,6 +140,8 @@ src/core/     the pipeline — no DOM, no Node specifics
 
 src/app/      the React app
   App.tsx        the shell: drop, transcribe, edit, export
+  model-files.ts the files each model is made of, and their sizes
+  fetch-progress.ts  reading a file with a running count of the bytes
   PianoRoll.tsx  the canvas piano roll
   editor.ts      editor state and the track colours
   playback.ts    the Web Audio player
@@ -504,6 +506,30 @@ npm run check:reproducibility
   from `node_modules`, and the path the app asks for) and once at `/assets/`
   (emitted by Vite because the runtime imports it). The `/assets/` copy is
   dead weight — about 15 MB — and can be excluded if that is ever worth doing.
+- **The progress bar moves because the app fetches the weights itself.** The
+  ONNX runtime fetches a model's files over HTTP and says nothing while it
+  does, so the bar used to sit on "Loading model" until the model was ready,
+  which on a slow load looked broken. The app now reads the files first,
+  counting the bytes as they arrive, and hands the same bytes to the
+  runtime. Do not go back to letting the runtime fetch them: measured on 12
+  November 2026, the browser's cache served the 980 kB piano graph on the
+  second request but **not** the 94 MB sidecar, so prefetching and hoping
+  for the cache downloaded the sidecar twice. The bytes are passed to the
+  runtime instead — `createWebOnnxRunner(weights)` in `src/core/onnx-web.ts`
+  — and each file is fetched exactly once.
+- **The list of files a model is made of must not drift from its lock.**
+  `src/app/model-files.ts` names them, and `test/model-files.test.ts` checks
+  the list against the lock: every file the browser fetches has to be in the
+  lock, and every file in the lock has to be fetched or be one of the two
+  the app does not use — Okarina's 's' size, which the app always loads 'm'
+  instead of, and Tsumugi's export description.
+- **Every stage of a conversion reports on one scale.** The pipeline reports
+  0 to 1 of its own work and the app puts that on the bar's scale, from
+  `CONVERT_START` onwards. Before this, the app set the bar to 5% for the
+  model load and the pipeline then reported from 2%, so the bar went 5%, 2%,
+  5% and on. The build of the session, which reports nothing and takes a
+  while, is the one step whose length is not known: it gets the
+  indeterminate bar rather than a number that does not move.
 
 ## Brand identity
 

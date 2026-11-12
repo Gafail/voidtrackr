@@ -33,6 +33,8 @@ import {
 } from '@core/range';
 import { describeQuantise, quantiseSpan } from '@core/quantise';
 import { KeyInfo, TempoInfo } from '@core/types';
+import { downloadFile, formatBytes } from './fetch-progress';
+import { MODEL_FILES, modelFileUrl } from './model-files';
 import { PianoRoll } from './PianoRoll';
 import { EditorTrack, arrangeTracks, fromEditorTracks, toEditorTracks } from './editor';
 import { Player } from './playback';
@@ -70,6 +72,22 @@ const THREADS_HINT =
   window.location.origin;
 
 /**
+ * The weight files the app has already fetched, by their absolute address.
+ *
+ * The app reads them first, counting the bytes, so that the progress bar
+ * has something to show, and then hands them to the runtime. The runtime
+ * would otherwise fetch them again, and the browser's cache will not do
+ * that job on its own: measured on 12 November 2026, the 980 kB piano graph
+ * was served from the cache on the second request and the 94 MB sidecar was
+ * not, so the sidecar crossed the network twice.
+ *
+ * The map is emptied once the model is built, because the runtime has
+ * copied the bytes into its own memory by then, and there is no reason to
+ * hold 94 MB for as long as the model is loaded.
+ */
+const weights = new Map<string, Uint8Array>();
+
+/**
  * Read the model over HTTP.
  *
  * The weights are checked against the lock file before the model runs, so a
@@ -79,13 +97,39 @@ const modelSource: ModelSource = {
   url: MODEL_URL,
   read: async (name: string) => {
     const base = new URL(MODEL_URL, window.location.href);
-    const response = await fetch(new URL(name, base).href);
+    const url = new URL(name, base).href;
+    const bytes = weights.get(url);
+    if (bytes) return toArrayBuffer(bytes);
+
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Could not read the model file ${name} (${response.status})`);
     }
     return response.arrayBuffer();
   },
 };
+
+/**
+ * Read one of Okarina's weight files.
+ *
+ * The app has usually already fetched it — it does that first, counting the
+ * bytes, so the progress bar has something to show — so the read comes from
+ * there rather than from the network.
+ */
+async function readOkarinaFile(name: string): Promise<Uint8Array> {
+  const url = new URL(name, new URL(ONNX_URL, window.location.href)).href;
+  const bytes = weights.get(url);
+  if (bytes) return bytes;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `Could not read the Okarina weights ${name} (${response.status}). ` +
+        'Run `npm run model:okarina` to fetch them.',
+    );
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
 
 /**
  * Load the Okarina model, checking its weights first.
@@ -100,14 +144,7 @@ async function loadOkarinaModel(): Promise<TranscriptionModel> {
 
   for (const name of [OKARINA_FILES.frontEnd, OKARINA_FILES.m]) {
     const expected = lock.files[name]?.sha256;
-    const response = await fetch(new URL(name, new URL(ONNX_URL, window.location.href)).href);
-    if (!response.ok) {
-      throw new Error(
-        `Could not read the Okarina weights ${name} (${response.status}). ` +
-          'Run `npm run model:okarina` to fetch them.',
-      );
-    }
-    const bytes = await response.arrayBuffer();
+    const bytes = await readOkarinaFile(name);
     const digest = await sha256Hex(bytes);
     if (digest !== expected) {
       throw new Error(
@@ -121,7 +158,7 @@ async function loadOkarinaModel(): Promise<TranscriptionModel> {
   }
 
   const fingerprint = await sha256Hex(digests.join(''));
-  const runner = await createWebOnnxRunner();
+  const runner = await createWebOnnxRunner(weights);
   return OkarinaModel.load(runner, ONNX_URL, 'm', fingerprint);
 }
 
@@ -134,9 +171,11 @@ async function loadOkarinaModel(): Promise<TranscriptionModel> {
  */
 function onnxFileReader(fetchCommand: string): (path: string) => Promise<ArrayBuffer> {
   return async (path: string): Promise<ArrayBuffer> => {
-    const response = await fetch(
-      new URL(path, new URL(ONNX_URL, window.location.href)).href,
-    );
+    const url = new URL(path, new URL(ONNX_URL, window.location.href)).href;
+    const bytes = weights.get(url);
+    if (bytes) return toArrayBuffer(bytes);
+
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(
         `Could not read the model file ${path} (${response.status}). ` +
@@ -170,12 +209,86 @@ async function loadOnnxModel(
     { dir: directory, files },
     fetchCommand,
   );
-  const runner = await createWebOnnxRunner();
+  const runner = await createWebOnnxRunner(weights);
   return create(runner, `${ONNX_URL}${directory}/`, fingerprint);
+}
+
+/**
+ * Fetch a model's weight files, counting the bytes as they arrive.
+ *
+ * The runtime fetches the weights itself, and the browser says nothing at
+ * all while it does: the bar used to sit on "Loading model" until the model
+ * was ready, which on a slow load looked broken. So the app fetches them
+ * first, with a byte count, and hands them to the runtime — which also
+ * saves the download happening twice, because the browser's cache will not
+ * keep the big ones.
+ */
+async function downloadModelFiles(
+  id: ModelId,
+  onProgress: (progress: { loaded: number; total: number }) => void,
+): Promise<void> {
+  const { root, files, totalBytes, fetchCommand } = MODEL_FILES[id];
+  const base = window.location.href;
+  let loaded = 0;
+
+  for (const file of files) {
+    const url = modelFileUrl(root, file.path, base);
+    try {
+      const bytes = await downloadFile(url, (progress) => {
+        onProgress({ loaded: loaded + progress.loaded, total: totalBytes });
+      });
+      loaded += bytes.byteLength;
+      weights.set(url, bytes);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Could not read the model's ${file.path} (${reason}). ` +
+          `Run \`${fetchCommand}\` to fetch the weights.`,
+      );
+    }
+  }
 }
 
 /** How many edits can be undone. */
 const HISTORY_LIMIT = 60;
+
+/**
+ * Where each stage of the conversion sits on the progress bar.
+ *
+ * The bar used to run backwards: the app set it to 5% for the model load and
+ * the pipeline then reported its own scale from 2%, so the bar went 5%, 2%,
+ * 5% and on. Every stage now reports on the one scale, and each is given a
+ * share of it.
+ */
+const DECODE_SHARE = 0.03;
+
+/** The share of the bar that fetching and starting the model takes. */
+const LOAD_SHARE = 0.32;
+
+/** The point on the bar where the model load starts. */
+const LOAD_START = DECODE_SHARE;
+
+/** The point on the bar where the conversion starts. */
+const CONVERT_START = DECODE_SHARE + LOAD_SHARE;
+
+/** What the progress bar is showing. */
+interface Progress {
+  /** How far along the bar is, 0 to 1. */
+  value: number;
+  /** What is happening. */
+  label: string;
+  /** True when the length of the step is not known. */
+  indeterminate?: boolean;
+  /** A detail beside the label, such as the bytes downloaded. */
+  detail?: string;
+}
+
+/** A step of loading a model. */
+type LoadStep =
+  /** The weights are coming down. */
+  | { phase: 'download'; loaded: number; total: number }
+  /** The weights are here; the runtime is building the session. */
+  | { phase: 'start' };
 
 type Status = 'idle' | 'working' | 'done' | 'error';
 type Theme = 'light' | 'dark';
@@ -228,7 +341,7 @@ function useTheme(): { theme: Theme; toggle: () => void } {
 
 export function App() {
   const [status, setStatus] = useState<Status>('idle');
-  const [progress, setProgress] = useState({ value: 0, label: '' });
+  const [progress, setProgress] = useState<Progress>({ value: 0, label: '' });
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -356,53 +469,72 @@ export function App() {
    * The weights are checked against the lock file before the model runs, so
    * a swapped-out or partially downloaded model is refused rather than used.
    * Each model is cached, so switching back and forth does not refetch it.
+   *
+   * The weights are fetched here first, with the bytes counted, so the bar
+   * moves while they come down. The runtime is then handed the same bytes,
+   * so nothing crosses the network twice.
    */
-  const loadModel = useCallback(async (id: ModelId): Promise<TranscriptionModel> => {
-    const cached = modelCacheRef.current.get(id);
-    if (cached) return cached;
+  const loadModel = useCallback(
+    async (id: ModelId, onProgress: (step: LoadStep) => void): Promise<TranscriptionModel> => {
+      const cached = modelCacheRef.current.get(id);
+      if (cached) return cached;
 
-    let model: TranscriptionModel;
-    switch (id) {
-      case 'okarina':
-        model = await loadOkarinaModel();
-        break;
-      case 'tsumugi':
-        model = await loadOnnxModel(
-          tsumugiLock,
-          TSUMUGI_DIR,
-          [TSUMUGI_FILES.graph, TSUMUGI_FILES.heads, TSUMUGI_FILES.headsJson],
-          'npm run model:tsumugi',
-          (runner, directory, fingerprint) =>
-            TsumugiModel.load(runner, directory, fingerprint),
-        );
-        break;
-      case 'yourmt3':
-        model = await loadOnnxModel(
-          yourmt3Lock,
-          YOURMT3_DIR,
-          [YOURMT3_FILES.encoder, YOURMT3_FILES.decoder, YOURMT3_FILES.vocab],
-          'npm run model:yourmt3',
-          (runner, directory, fingerprint) =>
-            YourMt3Model.load(runner, directory, fingerprint),
-        );
-        break;
-      case 'piano':
-        model = await loadOnnxModel(
-          pianoLock,
-          PIANO_DIR,
-          [PIANO_FILES.graph],
-          'npm run model:piano',
-          (runner, directory, fingerprint) =>
-            PianoTranscriptionModel.load(runner, directory, fingerprint),
-        );
-        break;
-      default:
-        model = await loadPinnedModel(modelSource, modelLock as ModelLock);
-    }
+      await downloadModelFiles(id, (progress) =>
+        onProgress({ phase: 'download', loaded: progress.loaded, total: progress.total }),
+      );
 
-    modelCacheRef.current.set(id, model);
-    return model;
-  }, []);
+      // The weights are here. What is left is the runtime building the
+      // session, which takes a while and reports nothing.
+      onProgress({ phase: 'start' });
+
+      let model: TranscriptionModel;
+      switch (id) {
+        case 'okarina':
+          model = await loadOkarinaModel();
+          break;
+        case 'tsumugi':
+          model = await loadOnnxModel(
+            tsumugiLock,
+            TSUMUGI_DIR,
+            [TSUMUGI_FILES.graph, TSUMUGI_FILES.heads, TSUMUGI_FILES.headsJson],
+            'npm run model:tsumugi',
+            (runner, directory, fingerprint) =>
+              TsumugiModel.load(runner, directory, fingerprint),
+          );
+          break;
+        case 'yourmt3':
+          model = await loadOnnxModel(
+            yourmt3Lock,
+            YOURMT3_DIR,
+            [YOURMT3_FILES.encoder, YOURMT3_FILES.decoder, YOURMT3_FILES.vocab],
+            'npm run model:yourmt3',
+            (runner, directory, fingerprint) =>
+              YourMt3Model.load(runner, directory, fingerprint),
+          );
+          break;
+        case 'piano':
+          model = await loadOnnxModel(
+            pianoLock,
+            PIANO_DIR,
+            [PIANO_FILES.graph],
+            'npm run model:piano',
+            (runner, directory, fingerprint) =>
+              PianoTranscriptionModel.load(runner, directory, fingerprint),
+          );
+          break;
+        default:
+          model = await loadPinnedModel(modelSource, modelLock as ModelLock);
+      }
+
+      modelCacheRef.current.set(id, model);
+      // The runtime has copied the weights into its own memory by now, so
+      // there is no reason to hold another 94 MB for as long as the model
+      // is loaded.
+      weights.clear();
+      return model;
+    },
+    [],
+  );
 
   // --- Player ----------------------------------------------------------
 
@@ -446,16 +578,39 @@ export function App() {
 
       try {
         const buffer = await file.arrayBuffer();
-        setProgress({ value: 0.02, label: 'Decoding audio' });
+        setProgress({ value: DECODE_SHARE, label: 'Decoding audio' });
         const audio = await decodeAudio(buffer);
         const samples = prepareMono(audio);
 
-        setProgress({ value: 0.05, label: 'Loading model' });
-        const model = await loadModel(modelId);
+        const model = await loadModel(modelId, (step) => {
+          if (step.phase === 'start') {
+            setProgress({
+              value: CONVERT_START,
+              label: 'Starting the model',
+              indeterminate: true,
+            });
+            return;
+          }
+          const fraction = step.total > 0 ? Math.min(1, step.loaded / step.total) : 0;
+          setProgress({
+            value: LOAD_START + fraction * LOAD_SHARE,
+            label: 'Loading model',
+            detail:
+              step.total > 0
+                ? `${formatBytes(step.loaded)} of ${formatBytes(step.total)}`
+                : formatBytes(step.loaded),
+          });
+        });
 
         const result = await transcribe(samples, {
           model,
-          onProgress: setProgress,
+          // The pipeline reports on its own scale, from 0 to 1. It is put
+          // onto the bar's scale here, so the bar only ever moves forwards.
+          onProgress: (info) =>
+            setProgress({
+              value: CONVERT_START + info.value * (1 - CONVERT_START),
+              label: info.label,
+            }),
         });
 
         setTracks(toEditorTracks(result.tracks));
@@ -855,12 +1010,18 @@ export function App() {
               <h2>{fileName}</h2>
               <div className="progress">
                 <div
-                  className="progress-bar"
-                  style={{ width: `${Math.round(progress.value * 100)}%` }}
+                  className={`progress-bar${progress.indeterminate ? ' indeterminate' : ''}`}
+                  style={
+                    progress.indeterminate
+                      ? undefined
+                      : { width: `${Math.round(progress.value * 100)}%` }
+                  }
                 />
               </div>
               <p className="progress-label">
-                {progress.label} · {Math.round(progress.value * 100)}%
+                {progress.label}
+                {progress.detail ? ` · ${progress.detail}` : ''}
+                {progress.indeterminate ? '' : ` · ${Math.round(progress.value * 100)}%`}
               </p>
             </>
           ) : (

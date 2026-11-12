@@ -183,6 +183,13 @@ piano roll. Click to select, drag to move, drag an edge to resize, and use
 <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Z</kbd> undoes. The model picker is in the
 header, so you can change model before dropping a file in.
 
+The bar under the file name says where the conversion has got to. The model's
+weights are downloaded first, and the bar counts the bytes as they arrive —
+the piano model's are 95 MB, so on a slow connection that is a while — with the
+megabytes down of the total beside it. When the weights are here the bar slides
+instead of showing a number, because building the model takes a few seconds and
+has no progress of its own to report.
+
 The **Range** boxes in the header choose which part of the spectrum to keep —
 say 0–400 Hz for the bass end of a track. They act on the notes the model
 found, not on the audio, so the model always hears the whole recording and the

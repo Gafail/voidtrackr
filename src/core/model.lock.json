@@ -1,5 +1,5 @@
 {
-  "$comment": "Pinned model definition. `npm run model` downloads these exact files and checks their hashes. Changing anything here changes the output, so treat it as a versioned dependency.",
+  "$comment": "Pinned model definition. `npm run model` downloads these exact files and checks their hashes. The hashes are what the output depends on. The sizes are recorded so the app can show how far a download has got, the way the other four locks do.",
   "id": "basic-pitch-icassp2022",
   "displayName": "Basic Pitch (ICASSP 2022)",
   "license": "Apache-2.0",
@@ -7,10 +7,12 @@
   "source": "https://raw.githubusercontent.com/spotify/basic-pitch-ts/main/model",
   "files": {
     "model.json": {
-      "sha256": "1ed1aaee3409ec1dc098c8b01f430c0911f6fe9412e7af8086750f9e8f302f68"
+      "sha256": "1ed1aaee3409ec1dc098c8b01f430c0911f6fe9412e7af8086750f9e8f302f68",
+      "bytes": 174537
     },
     "group1-shard1of1.bin": {
-      "sha256": "b142a95737a52e1e412d5f92e73d8bb80dfe8d04941acc0702f11f4524fb377c"
+      "sha256": "b142a95737a52e1e412d5f92e73d8bb80dfe8d04941acc0702f11f4524fb377c",
+      "bytes": 742392
     }
   },
   "contract": {

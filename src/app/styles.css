@@ -229,6 +229,14 @@ code {
   .void-bg {
     animation: none;
   }
+
+  /* A bar that cannot move still has to say the work is going on. */
+  .progress-bar.indeterminate {
+    animation: none;
+    margin-left: 0;
+    width: 100%;
+    opacity: 0.5;
+  }
 }
 
 /* 4. Header ---------------------------------------------------------------- */
@@ -662,6 +670,27 @@ code {
   height: 100%;
   background: var(--accent);
   transition: width 0.15s linear;
+}
+
+/*
+ * The step whose length is not known.
+ *
+ * Building the session takes a while and reports nothing, so the bar slides
+ * instead of sitting at a number that does not move. The reader is told
+ * what is happening by the label beside it.
+ */
+.progress-bar.indeterminate {
+  width: 30%;
+  animation: progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% {
+    margin-left: -30%;
+  }
+  100% {
+    margin-left: 100%;
+  }
 }
 
 .progress-label {

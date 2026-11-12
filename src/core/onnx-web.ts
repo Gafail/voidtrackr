@@ -1,8 +1,8 @@
 /**
  * The browser ONNX runtime, behind the shared interface.
  *
- * Only the app uses this. The command line has its own adapter, so neither
- * runtime leaks into the shared pipeline code.
+ * Only the app uses this. The tests and the measurement scripts have their
+ * own adapter, so neither runtime leaks into the shared pipeline code.
  *
  * The runtime is imported lazily: it is a large WebAssembly bundle, and
  * most sessions never touch it because Basic Pitch does not need it.
@@ -20,6 +20,11 @@ import {
 /** Where the WebAssembly runtime is served from. */
 const WASM_PATH = '/ort/';
 
+/** The address of a file, as the page sees it. */
+function absolute(path: string): string {
+  return new URL(path, window.location.href).href;
+}
+
 /**
  * Load the runtime and return a runner.
  *
@@ -27,8 +32,20 @@ const WASM_PATH = '/ort/';
  * everywhere, and it is the one that keeps the output identical between
  * runs, because it does not reorder its reductions the way the GPU path
  * does.
+ *
+ * `weights` holds the files the app has already fetched, by their absolute
+ * address. The runtime fetches the weights itself, and it does it without
+ * saying how far it has got — which is why the progress bar used to sit
+ * still through the whole of the load. When the app has already read a
+ * file, the runtime is handed the bytes rather than being sent to fetch
+ * them again.
+ *
+ * The address is the absolute one, because the runtime is given a path
+ * relative to the page and resolves it for itself.
  */
-export async function createWebOnnxRunner(): Promise<OnnxRunner> {
+export async function createWebOnnxRunner(
+  weights?: Map<string, Uint8Array>,
+): Promise<OnnxRunner> {
   const ort = await import('onnxruntime-web/wasm');
 
   ort.env.wasm.wasmPaths = WASM_PATH;
@@ -41,13 +58,21 @@ export async function createWebOnnxRunner(): Promise<OnnxRunner> {
 
   return {
     async createSession(path: string, externalData?: ExternalDataFile[]) {
-      const session = await ort.InferenceSession.create(path, {
+      const options = {
         ...DETERMINISTIC_SESSION_OPTIONS,
-        // The runtime fetched the graph over HTTP, so it does not know which
-        // directory it came from and cannot find the sidecar file the graph
-        // refers to. Mounting it under the name the graph uses fixes that.
-        externalData: externalData?.map((file) => ({ path: file.location, data: file.url })),
-      });
+        // The runtime does not know which directory the graph came from, so
+        // it cannot find the sidecar file the graph refers to. Mounting it
+        // under the name the graph uses fixes that.
+        externalData: externalData?.map((file) => ({
+          path: file.location,
+          data: weights?.get(absolute(file.url)) ?? file.url,
+        })),
+      };
+
+      const bytes = weights?.get(absolute(path));
+      const session = bytes
+        ? await ort.InferenceSession.create(bytes, options)
+        : await ort.InferenceSession.create(path, options);
 
       return {
         inputNames: session.inputNames,
@@ -73,7 +98,15 @@ export async function createWebOnnxRunner(): Promise<OnnxRunner> {
 
     /** Fetch a file that sits next to the model, such as a vocabulary. */
     async read(path: string): Promise<ArrayBuffer> {
-      const response = await fetch(new URL(path, window.location.href).href);
+      const bytes = weights?.get(absolute(path));
+      if (bytes) {
+        return bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer;
+      }
+
+      const response = await fetch(absolute(path));
       if (!response.ok) {
         throw new Error(`Could not read the model file ${path} (${response.status})`);
       }
